@@ -213,6 +213,15 @@ Each item must play only its assigned time range.
 
 Only after this passes should the proper mobile editor be built.
 
+### MVP 0 validation result
+
+MVP 0 passed its initial playback validation on iPhone Safari via GitHub Pages and on a PC browser.
+
+- One explicit tap on "Play Test Sequence" started playback.
+- Video A 10–20 seconds → Video B 10–20 seconds → Video A 30–40 seconds transitioned automatically with no additional user action.
+- Playback stopped after the final range.
+- The YouTube player's native time display was not visible on the smartphone, but this is not considered an MVP 0 failure.
+
 ---
 
 ## 9. MVP 1 — mobile editor

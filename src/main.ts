@@ -113,10 +113,6 @@ app.innerHTML = `
     <section class="sequence-panel" aria-labelledby="sequence-heading">
       <h2 id="sequence-heading">Fixed test sequence</h2>
       <ol id="sequence-list"></ol>
-      <p class="config-note">
-        Replace the placeholder IDs and time ranges in <code>TEST_CLIPS</code> at the top of
-        <code>src/main.ts</code> before testing.
-      </p>
     </section>
 
     <section class="log-panel" aria-labelledby="log-heading">
