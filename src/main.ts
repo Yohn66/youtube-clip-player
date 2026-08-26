@@ -107,6 +107,30 @@ app.innerHTML = `
         <div id="youtube-player"></div>
       </div>
 
+      <section class="editor-controls" aria-labelledby="editor-controls-heading">
+        <div class="editor-time-row">
+          <h2 id="editor-controls-heading">Current time</h2>
+          <output id="editor-current-time" class="editor-time-value">--:--.-</output>
+        </div>
+
+        <div class="mark-controls">
+          <div class="mark-control">
+            <button id="mark-in" class="mark-button" type="button" disabled>IN</button>
+            <div>
+              <span>IN time</span>
+              <output id="draft-in" class="mark-time" aria-live="polite">--:--.-</output>
+            </div>
+          </div>
+          <div class="mark-control">
+            <button id="mark-out" class="mark-button" type="button" disabled>OUT</button>
+            <div>
+              <span>OUT time</span>
+              <output id="draft-out" class="mark-time" aria-live="polite">--:--.-</output>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <div class="controls">
         <button id="play-sequence" class="primary-button" type="button" disabled>
           Loading YouTube Player…
@@ -148,6 +172,11 @@ const videoLoaderForm = document.querySelector<HTMLFormElement>('#video-loader')
 const youtubeUrlInput = document.querySelector<HTMLInputElement>('#youtube-url')!
 const loadVideoButton = document.querySelector<HTMLButtonElement>('#load-video')!
 const urlMessageElement = document.querySelector<HTMLElement>('#url-message')!
+const editorCurrentTimeElement = document.querySelector<HTMLOutputElement>('#editor-current-time')!
+const markInButton = document.querySelector<HTMLButtonElement>('#mark-in')!
+const markOutButton = document.querySelector<HTMLButtonElement>('#mark-out')!
+const draftInElement = document.querySelector<HTMLOutputElement>('#draft-in')!
+const draftOutElement = document.querySelector<HTMLOutputElement>('#draft-out')!
 const playSequenceButton = document.querySelector<HTMLButtonElement>('#play-sequence')!
 const playNextButton = document.querySelector<HTMLButtonElement>('#play-next')!
 const clipNumberElement = document.querySelector<HTMLElement>('#clip-number')!
@@ -167,6 +196,13 @@ let boundaryHandled = false
 let activeClipHasPlayed = false
 let awaitingPlaybackAfterAutoTransition = false
 let loadGeneration = 0
+let playerReady = false
+let editorVideoId: string | undefined
+let currentPlaybackSeconds: number | undefined
+let draftInSeconds: number | undefined
+let draftOutSeconds: number | undefined
+
+const UNSET_TIME = '--:--.-'
 
 const stateNames: Record<PlayerState, string> = {
   [-1]: 'Unstarted',
@@ -216,6 +252,47 @@ function clearUrlValidation(): void {
   urlMessageElement.textContent = ''
 }
 
+function formatEditorTime(value: number): string {
+  const minutes = Math.floor(value / 60)
+  const seconds = Math.floor(value % 60)
+  const tenths = Math.floor((value % 1) * 10)
+  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${tenths}`
+}
+
+function resetDraftMarks(): void {
+  draftInSeconds = undefined
+  draftOutSeconds = undefined
+  draftInElement.textContent = UNSET_TIME
+  draftOutElement.textContent = UNSET_TIME
+}
+
+function readEditorPlaybackTime(): number | undefined {
+  if (!player || !playerReady) return undefined
+
+  const seconds = player.getCurrentTime()
+  if (!Number.isFinite(seconds) || seconds < 0) return undefined
+
+  currentPlaybackSeconds = seconds
+  editorCurrentTimeElement.textContent = formatEditorTime(seconds)
+  return seconds
+}
+
+function markDraftIn(): void {
+  const seconds = readEditorPlaybackTime()
+  if (seconds === undefined) return
+
+  draftInSeconds = seconds
+  draftInElement.textContent = formatEditorTime(draftInSeconds)
+}
+
+function markDraftOut(): void {
+  const seconds = readEditorPlaybackTime()
+  if (seconds === undefined) return
+
+  draftOutSeconds = seconds
+  draftOutElement.textContent = formatEditorTime(draftOutSeconds)
+}
+
 function loadEnteredVideo(event: SubmitEvent): void {
   event.preventDefault()
 
@@ -233,6 +310,12 @@ function loadEnteredVideo(event: SubmitEvent): void {
   }
 
   clearUrlValidation()
+  if (editorVideoId !== videoId) resetDraftMarks()
+  editorVideoId = videoId
+  currentPlaybackSeconds = 0
+  editorCurrentTimeElement.textContent = formatEditorTime(currentPlaybackSeconds)
+  markInButton.disabled = false
+  markOutButton.disabled = false
   sequenceStarted = false
   currentClipIndex = -1
   boundaryHandled = false
@@ -425,6 +508,8 @@ function startSequence(): void {
   }
 
   sequenceStarted = true
+  markInButton.disabled = false
+  markOutButton.disabled = false
   currentClipIndex = -1
   addLog('Play Test Sequence pressed. Starting from clip 1.', 'manual')
   loadClip(0, 'start')
@@ -478,6 +563,7 @@ function initializePlayer(yt: YouTubeNamespace): void {
     },
     events: {
       onReady: () => {
+        playerReady = true
         playerStateElement.textContent = 'Ready'
         loadVideoButton.disabled = false
         playSequenceButton.disabled = false
@@ -498,8 +584,15 @@ function initializePlayer(yt: YouTubeNamespace): void {
 renderSequence()
 videoLoaderForm.addEventListener('submit', loadEnteredVideo)
 youtubeUrlInput.addEventListener('input', clearUrlValidation)
+markInButton.addEventListener('click', markDraftIn)
+markOutButton.addEventListener('click', markDraftOut)
 playSequenceButton.addEventListener('click', startSequence)
 playNextButton.addEventListener('click', playNextManually)
+
+window.setInterval(() => {
+  if (!editorVideoId && !sequenceStarted) return
+  readEditorPlaybackTime()
+}, 100)
 
 window.setInterval(() => {
   if (!player || !sequenceStarted || currentClipIndex < 0) return
@@ -520,6 +613,7 @@ window.setInterval(() => {
 
 loadYouTubeApi().then(initializePlayer).catch((error: unknown) => {
   const message = error instanceof Error ? error.message : 'YouTube IFrame Player API failed to load.'
+  playerReady = false
   playerStateElement.textContent = 'API load failed'
   loadVideoButton.disabled = true
   playSequenceButton.textContent = 'Player unavailable'
