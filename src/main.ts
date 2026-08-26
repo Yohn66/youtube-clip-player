@@ -35,8 +35,8 @@ type PlayerState = -1 | 0 | 1 | 2 | 3 | 5
 type YouTubePlayer = {
   loadVideoById: (options: {
     videoId: string
-    startSeconds: number
-    endSeconds: number
+    startSeconds?: number
+    endSeconds?: number
   }) => void
   playVideo: () => void
   getCurrentTime: () => number
@@ -79,11 +79,30 @@ app.innerHTML = `
   <main class="test-shell">
     <header class="page-header">
       <p class="eyebrow">YouTube Clip Player</p>
-      <h1>MVP 0 Playback Test</h1>
-      <p class="intro">One player will attempt the fixed sequence A → B → A.</p>
+      <h1>Mobile Video Editor</h1>
+      <p class="intro">Load a YouTube video, or run the proven fixed A → B → A playback test.</p>
     </header>
 
     <section class="player-panel" aria-label="YouTube test player">
+      <form id="video-loader" class="video-loader" novalidate>
+        <label for="youtube-url">YouTube URL</label>
+        <input
+          id="youtube-url"
+          name="youtube-url"
+          type="text"
+          inputmode="url"
+          autocomplete="off"
+          autocapitalize="none"
+          spellcheck="false"
+          placeholder="https://www.youtube.com/watch?v=…"
+          aria-describedby="url-message"
+        />
+        <button id="load-video" class="primary-button" type="submit" disabled>
+          Load Video
+        </button>
+        <p id="url-message" class="url-message" aria-live="polite"></p>
+      </form>
+
       <div class="player-frame">
         <div id="youtube-player"></div>
       </div>
@@ -125,6 +144,10 @@ app.innerHTML = `
   </main>
 `
 
+const videoLoaderForm = document.querySelector<HTMLFormElement>('#video-loader')!
+const youtubeUrlInput = document.querySelector<HTMLInputElement>('#youtube-url')!
+const loadVideoButton = document.querySelector<HTMLButtonElement>('#load-video')!
+const urlMessageElement = document.querySelector<HTMLElement>('#url-message')!
 const playSequenceButton = document.querySelector<HTMLButtonElement>('#play-sequence')!
 const playNextButton = document.querySelector<HTMLButtonElement>('#play-next')!
 const clipNumberElement = document.querySelector<HTMLElement>('#clip-number')!
@@ -141,6 +164,7 @@ let player: YouTubePlayer | undefined
 let currentClipIndex = -1
 let sequenceStarted = false
 let boundaryHandled = false
+let activeClipHasPlayed = false
 let awaitingPlaybackAfterAutoTransition = false
 let loadGeneration = 0
 
@@ -159,6 +183,72 @@ const errorMessages: Record<number, string> = {
   100: 'Video not found or private',
   101: 'Embedding is not allowed by the video owner',
   150: 'Embedding is not allowed by the video owner',
+}
+
+function extractYouTubeVideoId(value: string): string | undefined {
+  let url: URL
+
+  try {
+    url = new URL(value.trim())
+  } catch {
+    return undefined
+  }
+
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return undefined
+
+  const hostname = url.hostname.toLowerCase()
+  let videoId: string | null | undefined
+
+  if (hostname === 'youtu.be' || hostname === 'www.youtu.be') {
+    videoId = url.pathname.split('/').filter(Boolean)[0]
+  } else if (
+    (hostname === 'youtube.com' || hostname === 'www.youtube.com' || hostname === 'm.youtube.com') &&
+    url.pathname === '/watch'
+  ) {
+    videoId = url.searchParams.get('v')
+  }
+
+  return videoId && /^[A-Za-z0-9_-]{11}$/.test(videoId) ? videoId : undefined
+}
+
+function clearUrlValidation(): void {
+  youtubeUrlInput.removeAttribute('aria-invalid')
+  urlMessageElement.textContent = ''
+}
+
+function loadEnteredVideo(event: SubmitEvent): void {
+  event.preventDefault()
+
+  const videoId = extractYouTubeVideoId(youtubeUrlInput.value)
+  if (!videoId) {
+    youtubeUrlInput.setAttribute('aria-invalid', 'true')
+    urlMessageElement.textContent = 'Enter a YouTube watch or youtu.be URL.'
+    youtubeUrlInput.focus()
+    return
+  }
+
+  if (!player) {
+    urlMessageElement.textContent = 'The YouTube player is still loading. Please try again.'
+    return
+  }
+
+  clearUrlValidation()
+  sequenceStarted = false
+  currentClipIndex = -1
+  boundaryHandled = false
+  activeClipHasPlayed = false
+  awaitingPlaybackAfterAutoTransition = false
+  loadGeneration += 1
+  playNextButton.disabled = true
+
+  clipNumberElement.textContent = 'Manual video'
+  videoIdElement.textContent = videoId
+  clipRangeElement.textContent = 'Full video'
+  currentPositionElement.textContent = 'Use player controls'
+  transitionTypeElement.textContent = 'Load Video'
+
+  player.loadVideoById({ videoId, startSeconds: 0 })
+  addLog(`Loaded video ${videoId} from the URL field.`, 'manual')
 }
 
 function formatSeconds(value: number): string {
@@ -258,6 +348,7 @@ function loadClip(index: number, transition: 'start' | 'automatic' | 'manual'): 
 
   currentClipIndex = index
   boundaryHandled = false
+  activeClipHasPlayed = false
   awaitingPlaybackAfterAutoTransition = transition === 'automatic'
   loadGeneration += 1
   const thisGeneration = loadGeneration
@@ -299,12 +390,21 @@ function advanceToNext(transition: 'automatic' | 'manual'): void {
 function handlePlayerStateChange(state: PlayerState): void {
   playerStateElement.textContent = stateNames[state] ?? `Unknown (${state})`
 
+  if (
+    state === 1 &&
+    sequenceStarted &&
+    player &&
+    player.getVideoData().video_id === TEST_CLIPS[currentClipIndex]?.videoId
+  ) {
+    activeClipHasPlayed = true
+  }
+
   if (state === 1 && awaitingPlaybackAfterAutoTransition) {
     awaitingPlaybackAfterAutoTransition = false
     addLog(`Clip ${currentClipIndex + 1} began playing after an automatic transition.`, 'automatic')
   }
 
-  if (state === 0 && sequenceStarted && !boundaryHandled && player) {
+  if (state === 0 && sequenceStarted && activeClipHasPlayed && !boundaryHandled && player) {
     const activeClip = TEST_CLIPS[currentClipIndex]
     const endedVideoId = player.getVideoData().video_id
 
@@ -379,6 +479,7 @@ function initializePlayer(yt: YouTubeNamespace): void {
     events: {
       onReady: () => {
         playerStateElement.textContent = 'Ready'
+        loadVideoButton.disabled = false
         playSequenceButton.disabled = false
         playSequenceButton.textContent = 'Play Test Sequence'
         addLog('YouTube player is ready. Playback requires the start button.', 'system')
@@ -395,6 +496,8 @@ function initializePlayer(yt: YouTubeNamespace): void {
 }
 
 renderSequence()
+videoLoaderForm.addEventListener('submit', loadEnteredVideo)
+youtubeUrlInput.addEventListener('input', clearUrlValidation)
 playSequenceButton.addEventListener('click', startSequence)
 playNextButton.addEventListener('click', playNextManually)
 
@@ -418,6 +521,7 @@ window.setInterval(() => {
 loadYouTubeApi().then(initializePlayer).catch((error: unknown) => {
   const message = error instanceof Error ? error.message : 'YouTube IFrame Player API failed to load.'
   playerStateElement.textContent = 'API load failed'
+  loadVideoButton.disabled = true
   playSequenceButton.textContent = 'Player unavailable'
   addLog(message, 'system')
 })

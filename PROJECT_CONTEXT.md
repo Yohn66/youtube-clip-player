@@ -228,6 +228,16 @@ MVP 0 passed its initial playback validation on iPhone Safari via GitHub Pages a
 
 After MVP 0 succeeds, build the basic user-facing app.
 
+Users must be able to return to an already-added clip later, edit that clip's video,
+start, and end settings, correct its timestamps, and save the changes.
+
+The MVP 1 editing experience should prioritize, in order:
+
+1. Easy timestamp selection.
+2. Easy correction of mistakes.
+3. Easy reordering, adding, and removing of clips.
+4. Easy playback review.
+
 Suggested mobile workflow:
 
 ### Video input
