@@ -100,6 +100,7 @@ h2 {
 }
 
 .player-panel,
+.clip-list-panel,
 .status-panel,
 .sequence-panel,
 .log-panel {
@@ -277,6 +278,99 @@ h2 {
 .clip-count {
   color: #475467;
   font-weight: 700;
+}
+
+.clip-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.clip-list-empty {
+  padding: 18px 12px;
+  border-radius: 10px;
+  color: #667085;
+  background: #f7f8fa;
+  text-align: center;
+}
+
+.clip-list-item {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #e4e7ec;
+  border-radius: 12px;
+  background: #f9fafb;
+}
+
+.clip-list-item-heading {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.clip-order {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  place-items: center;
+  border-radius: 50%;
+  color: #ffffff;
+  background: #344054;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.clip-times {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.clip-times > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.clip-times dt {
+  color: #667085;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.clip-times dd {
+  margin: 0;
+  color: #202b40;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.86rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.clip-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.clip-action-button {
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px;
+  color: #344054;
+  background: #e8edf4;
+  font-size: 1rem;
+}
+
+.delete-clip-button {
+  color: #b42318;
+  background: #fee4e2;
+  font-size: 0.85rem;
 }
 
 #youtube-player,
@@ -478,6 +572,7 @@ h2 {
   }
 
   .player-panel,
+  .clip-list-panel,
   .status-panel,
   .sequence-panel,
   .log-panel {

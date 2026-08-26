@@ -168,6 +168,11 @@ app.innerHTML = `
       </div>
     </section>
 
+    <section class="clip-list-panel" aria-labelledby="clip-list-heading">
+      <h2 id="clip-list-heading">Clip list</h2>
+      <ol id="clip-list" class="clip-list"></ol>
+    </section>
+
     <section class="status-panel" aria-labelledby="status-heading">
       <h2 id="status-heading">Current status</h2>
       <dl class="status-grid">
@@ -209,6 +214,7 @@ const outAdjustmentButtons = document.querySelectorAll<HTMLButtonElement>('[data
 const addClipButton = document.querySelector<HTMLButtonElement>('#add-clip')!
 const addClipMessageElement = document.querySelector<HTMLElement>('#add-clip-message')!
 const clipCountElement = document.querySelector<HTMLElement>('#clip-count')!
+const clipListElement = document.querySelector<HTMLOListElement>('#clip-list')!
 const playSequenceButton = document.querySelector<HTMLButtonElement>('#play-sequence')!
 const playNextButton = document.querySelector<HTMLButtonElement>('#play-next')!
 const clipNumberElement = document.querySelector<HTMLElement>('#clip-number')!
@@ -237,6 +243,7 @@ let manualVideoActive = false
 let nextClipId = 1
 
 const clips: Clip[] = []
+const videoLabels = new Map<string, string>()
 
 const UNSET_TIME = '--:--.-'
 
@@ -355,6 +362,81 @@ function adjustDraftOut(deltaSeconds: number): void {
   clearAddClipValidation()
 }
 
+function getVideoLabel(videoId: string): string {
+  const existingLabel = videoLabels.get(videoId)
+  if (existingLabel) return existingLabel
+
+  const label = `Video ${videoLabels.size + 1}`
+  videoLabels.set(videoId, label)
+  return label
+}
+
+function moveClip(index: number, offset: -1 | 1): void {
+  const targetIndex = index + offset
+  const clip = clips[index]
+  if (!clip || targetIndex < 0 || targetIndex >= clips.length) return
+
+  clips.splice(index, 1)
+  clips.splice(targetIndex, 0, clip)
+  renderClipList()
+}
+
+function deleteClip(index: number): void {
+  if (!clips[index]) return
+
+  clips.splice(index, 1)
+  renderClipList()
+}
+
+function renderClipList(): void {
+  clipCountElement.textContent = `${clips.length} ${clips.length === 1 ? 'clip' : 'clips'} added`
+  clipListElement.innerHTML = ''
+
+  if (clips.length === 0) {
+    const emptyItem = document.createElement('li')
+    emptyItem.className = 'clip-list-empty'
+    emptyItem.textContent = 'No clips added yet.'
+    clipListElement.append(emptyItem)
+    return
+  }
+
+  clips.forEach((clip, index) => {
+    const item = document.createElement('li')
+    const durationSeconds = clip.endSeconds - clip.startSeconds
+    const orderNumber = index + 1
+
+    item.className = 'clip-list-item'
+    item.innerHTML = `
+      <div class="clip-list-item-heading">
+        <span class="clip-order" aria-label="Clip ${orderNumber}">${orderNumber}</span>
+        <strong>${getVideoLabel(clip.videoId)}</strong>
+      </div>
+      <dl class="clip-times">
+        <div><dt>Start</dt><dd>${formatEditorTime(clip.startSeconds)}</dd></div>
+        <div><dt>End</dt><dd>${formatEditorTime(clip.endSeconds)}</dd></div>
+        <div><dt>Duration</dt><dd>${formatEditorTime(durationSeconds)}</dd></div>
+      </dl>
+      <div class="clip-actions">
+        <button class="clip-action-button" type="button" data-action="up" aria-label="Move clip ${orderNumber} up" ${index === 0 ? 'disabled' : ''}>↑</button>
+        <button class="clip-action-button" type="button" data-action="down" aria-label="Move clip ${orderNumber} down" ${index === clips.length - 1 ? 'disabled' : ''}>↓</button>
+        <button class="clip-action-button delete-clip-button" type="button" data-action="delete">Delete</button>
+      </div>
+    `
+
+    item.querySelector<HTMLButtonElement>('[data-action="up"]')?.addEventListener('click', () => {
+      moveClip(index, -1)
+    })
+    item.querySelector<HTMLButtonElement>('[data-action="down"]')?.addEventListener('click', () => {
+      moveClip(index, 1)
+    })
+    item.querySelector<HTMLButtonElement>('[data-action="delete"]')?.addEventListener('click', () => {
+      deleteClip(index)
+    })
+
+    clipListElement.append(item)
+  })
+}
+
 function addDraftClip(): void {
   if (!manualVideoActive || !editorVideoId || player?.getVideoData().video_id !== editorVideoId) {
     addClipMessageElement.textContent = 'Load a YouTube video before adding a clip.'
@@ -380,8 +462,8 @@ function addDraftClip(): void {
   nextClipId += 1
 
   clearAddClipValidation()
-  clipCountElement.textContent = `${clips.length} ${clips.length === 1 ? 'clip' : 'clips'} added`
   resetDraftMarks()
+  renderClipList()
 }
 
 function loadEnteredVideo(event: SubmitEvent): void {
@@ -678,6 +760,7 @@ function initializePlayer(yt: YouTubeNamespace): void {
 }
 
 renderSequence()
+renderClipList()
 videoLoaderForm.addEventListener('submit', loadEnteredVideo)
 youtubeUrlInput.addEventListener('input', clearUrlValidation)
 markInButton.addEventListener('click', markDraftIn)
