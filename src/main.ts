@@ -7,6 +7,13 @@ type TestClip = {
   endSeconds: number
 }
 
+type Clip = {
+  id: string
+  videoId: string
+  startSeconds: number
+  endSeconds: number
+}
+
 // MVP 0 test data: replace only the values in this block when test videos are chosen.
 // Keep the first and third videoId values identical so the sequence remains A -> B -> A.
 const TEST_CLIPS: readonly TestClip[] = [
@@ -141,6 +148,14 @@ app.innerHTML = `
             </div>
           </div>
         </div>
+
+        <div class="add-clip-controls">
+          <button id="add-clip" class="primary-button add-clip-button" type="button" disabled>
+            Add Clip
+          </button>
+          <p id="add-clip-message" class="add-clip-message" aria-live="polite"></p>
+          <p id="clip-count" class="clip-count" aria-live="polite">0 clips added</p>
+        </div>
       </section>
 
       <div class="controls">
@@ -191,6 +206,9 @@ const draftInElement = document.querySelector<HTMLOutputElement>('#draft-in')!
 const draftOutElement = document.querySelector<HTMLOutputElement>('#draft-out')!
 const inAdjustmentButtons = document.querySelectorAll<HTMLButtonElement>('[data-adjust="in"]')
 const outAdjustmentButtons = document.querySelectorAll<HTMLButtonElement>('[data-adjust="out"]')
+const addClipButton = document.querySelector<HTMLButtonElement>('#add-clip')!
+const addClipMessageElement = document.querySelector<HTMLElement>('#add-clip-message')!
+const clipCountElement = document.querySelector<HTMLElement>('#clip-count')!
 const playSequenceButton = document.querySelector<HTMLButtonElement>('#play-sequence')!
 const playNextButton = document.querySelector<HTMLButtonElement>('#play-next')!
 const clipNumberElement = document.querySelector<HTMLElement>('#clip-number')!
@@ -215,6 +233,10 @@ let editorVideoId: string | undefined
 let currentPlaybackSeconds: number | undefined
 let draftInSeconds: number | undefined
 let draftOutSeconds: number | undefined
+let manualVideoActive = false
+let nextClipId = 1
+
+const clips: Clip[] = []
 
 const UNSET_TIME = '--:--.-'
 
@@ -282,6 +304,10 @@ function resetDraftMarks(): void {
   outAdjustmentButtons.forEach((button) => (button.disabled = true))
 }
 
+function clearAddClipValidation(): void {
+  addClipMessageElement.textContent = ''
+}
+
 function readEditorPlaybackTime(): number | undefined {
   if (!player || !playerReady) return undefined
 
@@ -300,6 +326,7 @@ function markDraftIn(): void {
   draftInSeconds = seconds
   draftInElement.textContent = formatEditorTime(draftInSeconds)
   inAdjustmentButtons.forEach((button) => (button.disabled = false))
+  clearAddClipValidation()
 }
 
 function markDraftOut(): void {
@@ -309,6 +336,7 @@ function markDraftOut(): void {
   draftOutSeconds = seconds
   draftOutElement.textContent = formatEditorTime(draftOutSeconds)
   outAdjustmentButtons.forEach((button) => (button.disabled = false))
+  clearAddClipValidation()
 }
 
 function adjustDraftIn(deltaSeconds: number): void {
@@ -316,6 +344,7 @@ function adjustDraftIn(deltaSeconds: number): void {
 
   draftInSeconds = Math.max(0, draftInSeconds + deltaSeconds)
   draftInElement.textContent = formatEditorTime(draftInSeconds)
+  clearAddClipValidation()
 }
 
 function adjustDraftOut(deltaSeconds: number): void {
@@ -323,6 +352,36 @@ function adjustDraftOut(deltaSeconds: number): void {
 
   draftOutSeconds = Math.max(0, draftOutSeconds + deltaSeconds)
   draftOutElement.textContent = formatEditorTime(draftOutSeconds)
+  clearAddClipValidation()
+}
+
+function addDraftClip(): void {
+  if (!manualVideoActive || !editorVideoId || player?.getVideoData().video_id !== editorVideoId) {
+    addClipMessageElement.textContent = 'Load a YouTube video before adding a clip.'
+    return
+  }
+
+  if (draftInSeconds === undefined || draftOutSeconds === undefined) {
+    addClipMessageElement.textContent = 'Set both IN and OUT times before adding a clip.'
+    return
+  }
+
+  if (draftOutSeconds <= draftInSeconds) {
+    addClipMessageElement.textContent = 'OUT time must be later than IN time.'
+    return
+  }
+
+  clips.push({
+    id: `clip-${nextClipId}`,
+    videoId: editorVideoId,
+    startSeconds: draftInSeconds,
+    endSeconds: draftOutSeconds,
+  })
+  nextClipId += 1
+
+  clearAddClipValidation()
+  clipCountElement.textContent = `${clips.length} ${clips.length === 1 ? 'clip' : 'clips'} added`
+  resetDraftMarks()
 }
 
 function loadEnteredVideo(event: SubmitEvent): void {
@@ -342,8 +401,10 @@ function loadEnteredVideo(event: SubmitEvent): void {
   }
 
   clearUrlValidation()
+  clearAddClipValidation()
   if (editorVideoId !== videoId) resetDraftMarks()
   editorVideoId = videoId
+  manualVideoActive = true
   currentPlaybackSeconds = 0
   editorCurrentTimeElement.textContent = formatEditorTime(currentPlaybackSeconds)
   markInButton.disabled = false
@@ -540,6 +601,7 @@ function startSequence(): void {
   }
 
   sequenceStarted = true
+  manualVideoActive = false
   markInButton.disabled = false
   markOutButton.disabled = false
   currentClipIndex = -1
@@ -598,6 +660,7 @@ function initializePlayer(yt: YouTubeNamespace): void {
         playerReady = true
         playerStateElement.textContent = 'Ready'
         loadVideoButton.disabled = false
+        addClipButton.disabled = false
         playSequenceButton.disabled = false
         playSequenceButton.textContent = 'Play Test Sequence'
         addLog('YouTube player is ready. Playback requires the start button.', 'system')
@@ -605,6 +668,7 @@ function initializePlayer(yt: YouTubeNamespace): void {
       onStateChange: (event) => handlePlayerStateChange(event.data),
       onError: (event) => {
         const detail = errorMessages[event.data] ?? `Unknown YouTube error (${event.data})`
+        manualVideoActive = false
         awaitingPlaybackAfterAutoTransition = false
         playerStateElement.textContent = 'Error'
         addLog(`Player error: ${detail}.`, 'system')
@@ -624,6 +688,7 @@ inAdjustmentButtons.forEach((button) => {
 outAdjustmentButtons.forEach((button) => {
   button.addEventListener('click', () => adjustDraftOut(Number(button.dataset.delta)))
 })
+addClipButton.addEventListener('click', addDraftClip)
 playSequenceButton.addEventListener('click', startSequence)
 playNextButton.addEventListener('click', playNextManually)
 
@@ -654,6 +719,7 @@ loadYouTubeApi().then(initializePlayer).catch((error: unknown) => {
   playerReady = false
   playerStateElement.textContent = 'API load failed'
   loadVideoButton.disabled = true
+  addClipButton.disabled = true
   playSequenceButton.textContent = 'Player unavailable'
   addLog(message, 'system')
 })

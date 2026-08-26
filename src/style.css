@@ -252,6 +252,33 @@ h2 {
   font-size: 0.95rem;
 }
 
+.add-clip-controls {
+  display: grid;
+  gap: 6px;
+}
+
+.add-clip-button {
+  width: 100%;
+}
+
+.add-clip-message,
+.clip-count {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.add-clip-message {
+  min-height: 1.2em;
+  color: #b42318;
+}
+
+.clip-count {
+  color: #475467;
+  font-weight: 700;
+}
+
 #youtube-player,
 #youtube-player iframe {
   width: 100%;
