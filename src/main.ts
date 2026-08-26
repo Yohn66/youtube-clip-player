@@ -120,12 +120,24 @@ app.innerHTML = `
               <span>IN time</span>
               <output id="draft-in" class="mark-time" aria-live="polite">--:--.-</output>
             </div>
+            <div class="adjustment-controls" role="group" aria-label="Adjust IN time">
+              <button class="adjustment-button" type="button" data-adjust="in" data-delta="-5" disabled>-5</button>
+              <button class="adjustment-button" type="button" data-adjust="in" data-delta="-1" disabled>-1</button>
+              <button class="adjustment-button" type="button" data-adjust="in" data-delta="1" disabled>+1</button>
+              <button class="adjustment-button" type="button" data-adjust="in" data-delta="5" disabled>+5</button>
+            </div>
           </div>
           <div class="mark-control">
             <button id="mark-out" class="mark-button" type="button" disabled>OUT</button>
             <div>
               <span>OUT time</span>
               <output id="draft-out" class="mark-time" aria-live="polite">--:--.-</output>
+            </div>
+            <div class="adjustment-controls" role="group" aria-label="Adjust OUT time">
+              <button class="adjustment-button" type="button" data-adjust="out" data-delta="-5" disabled>-5</button>
+              <button class="adjustment-button" type="button" data-adjust="out" data-delta="-1" disabled>-1</button>
+              <button class="adjustment-button" type="button" data-adjust="out" data-delta="1" disabled>+1</button>
+              <button class="adjustment-button" type="button" data-adjust="out" data-delta="5" disabled>+5</button>
             </div>
           </div>
         </div>
@@ -177,6 +189,8 @@ const markInButton = document.querySelector<HTMLButtonElement>('#mark-in')!
 const markOutButton = document.querySelector<HTMLButtonElement>('#mark-out')!
 const draftInElement = document.querySelector<HTMLOutputElement>('#draft-in')!
 const draftOutElement = document.querySelector<HTMLOutputElement>('#draft-out')!
+const inAdjustmentButtons = document.querySelectorAll<HTMLButtonElement>('[data-adjust="in"]')
+const outAdjustmentButtons = document.querySelectorAll<HTMLButtonElement>('[data-adjust="out"]')
 const playSequenceButton = document.querySelector<HTMLButtonElement>('#play-sequence')!
 const playNextButton = document.querySelector<HTMLButtonElement>('#play-next')!
 const clipNumberElement = document.querySelector<HTMLElement>('#clip-number')!
@@ -264,6 +278,8 @@ function resetDraftMarks(): void {
   draftOutSeconds = undefined
   draftInElement.textContent = UNSET_TIME
   draftOutElement.textContent = UNSET_TIME
+  inAdjustmentButtons.forEach((button) => (button.disabled = true))
+  outAdjustmentButtons.forEach((button) => (button.disabled = true))
 }
 
 function readEditorPlaybackTime(): number | undefined {
@@ -283,6 +299,7 @@ function markDraftIn(): void {
 
   draftInSeconds = seconds
   draftInElement.textContent = formatEditorTime(draftInSeconds)
+  inAdjustmentButtons.forEach((button) => (button.disabled = false))
 }
 
 function markDraftOut(): void {
@@ -290,6 +307,21 @@ function markDraftOut(): void {
   if (seconds === undefined) return
 
   draftOutSeconds = seconds
+  draftOutElement.textContent = formatEditorTime(draftOutSeconds)
+  outAdjustmentButtons.forEach((button) => (button.disabled = false))
+}
+
+function adjustDraftIn(deltaSeconds: number): void {
+  if (draftInSeconds === undefined) return
+
+  draftInSeconds = Math.max(0, draftInSeconds + deltaSeconds)
+  draftInElement.textContent = formatEditorTime(draftInSeconds)
+}
+
+function adjustDraftOut(deltaSeconds: number): void {
+  if (draftOutSeconds === undefined) return
+
+  draftOutSeconds = Math.max(0, draftOutSeconds + deltaSeconds)
   draftOutElement.textContent = formatEditorTime(draftOutSeconds)
 }
 
@@ -586,6 +618,12 @@ videoLoaderForm.addEventListener('submit', loadEnteredVideo)
 youtubeUrlInput.addEventListener('input', clearUrlValidation)
 markInButton.addEventListener('click', markDraftIn)
 markOutButton.addEventListener('click', markDraftOut)
+inAdjustmentButtons.forEach((button) => {
+  button.addEventListener('click', () => adjustDraftIn(Number(button.dataset.delta)))
+})
+outAdjustmentButtons.forEach((button) => {
+  button.addEventListener('click', () => adjustDraftOut(Number(button.dataset.delta)))
+})
 playSequenceButton.addEventListener('click', startSequence)
 playNextButton.addEventListener('click', playNextManually)
 
