@@ -40,6 +40,10 @@ const TEST_CLIPS: readonly TestClip[] = [
 type PlayerState = -1 | 0 | 1 | 2 | 3 | 5
 
 type YouTubePlayer = {
+  cueVideoById: (options: {
+    videoId: string
+    startSeconds?: number
+  }) => void
   loadVideoById: (options: {
     videoId: string
     startSeconds?: number
@@ -85,12 +89,12 @@ const app = document.querySelector<HTMLDivElement>('#app')!
 app.innerHTML = `
   <main class="test-shell">
     <header class="page-header">
-      <p class="eyebrow">YouTube Clip Player</p>
-      <h1>Mobile Video Editor</h1>
-      <p class="intro">Load a YouTube video, or run the proven fixed A → B → A playback test.</p>
+      <p class="eyebrow">YouTube クリッププレイヤー</p>
+      <h1>モバイル動画編集</h1>
+      <p class="intro">YouTube動画を読み込んでクリップを作成できます。固定のA → B → A再生テストも実行できます。</p>
     </header>
 
-    <section class="player-panel" aria-label="YouTube test player">
+    <section class="player-panel" aria-label="YouTubeテストプレイヤー">
       <form id="video-loader" class="video-loader" novalidate>
         <label for="youtube-url">YouTube URL</label>
         <input
@@ -105,7 +109,7 @@ app.innerHTML = `
           aria-describedby="url-message"
         />
         <button id="load-video" class="primary-button" type="submit" disabled>
-          Load Video
+          動画を読み込む
         </button>
         <p id="url-message" class="url-message" aria-live="polite"></p>
       </form>
@@ -116,18 +120,18 @@ app.innerHTML = `
 
       <section class="editor-controls" aria-labelledby="editor-controls-heading">
         <div class="editor-time-row">
-          <h2 id="editor-controls-heading">Current time</h2>
+          <h2 id="editor-controls-heading">現在位置</h2>
           <output id="editor-current-time" class="editor-time-value">--:--.-</output>
         </div>
 
         <div class="mark-controls">
           <div class="mark-control">
-            <button id="mark-in" class="mark-button" type="button" disabled>IN</button>
+            <button id="mark-in" class="mark-button" type="button" disabled>開始時間を設定</button>
             <div>
-              <span>IN time</span>
+              <span>開始</span>
               <output id="draft-in" class="mark-time" aria-live="polite">--:--.-</output>
             </div>
-            <div class="adjustment-controls" role="group" aria-label="Adjust IN time">
+            <div class="adjustment-controls" role="group" aria-label="開始位置を調整">
               <button class="adjustment-button" type="button" data-adjust="in" data-delta="-5" disabled>-5</button>
               <button class="adjustment-button" type="button" data-adjust="in" data-delta="-1" disabled>-1</button>
               <button class="adjustment-button" type="button" data-adjust="in" data-delta="1" disabled>+1</button>
@@ -135,12 +139,12 @@ app.innerHTML = `
             </div>
           </div>
           <div class="mark-control">
-            <button id="mark-out" class="mark-button" type="button" disabled>OUT</button>
+            <button id="mark-out" class="mark-button" type="button" disabled>終了時間を設定</button>
             <div>
-              <span>OUT time</span>
+              <span>終了</span>
               <output id="draft-out" class="mark-time" aria-live="polite">--:--.-</output>
             </div>
-            <div class="adjustment-controls" role="group" aria-label="Adjust OUT time">
+            <div class="adjustment-controls" role="group" aria-label="終了位置を調整">
               <button class="adjustment-button" type="button" data-adjust="out" data-delta="-5" disabled>-5</button>
               <button class="adjustment-button" type="button" data-adjust="out" data-delta="-1" disabled>-1</button>
               <button class="adjustment-button" type="button" data-adjust="out" data-delta="1" disabled>+1</button>
@@ -150,50 +154,54 @@ app.innerHTML = `
         </div>
 
         <div class="add-clip-controls">
+          <p id="edit-mode-indicator" class="edit-mode-indicator" aria-live="polite" hidden></p>
           <button id="add-clip" class="primary-button add-clip-button" type="button" disabled>
-            Add Clip
+            クリップを追加
+          </button>
+          <button id="cancel-edit" class="secondary-button cancel-edit-button" type="button" hidden>
+            キャンセル
           </button>
           <p id="add-clip-message" class="add-clip-message" aria-live="polite"></p>
-          <p id="clip-count" class="clip-count" aria-live="polite">0 clips added</p>
+          <p id="clip-count" class="clip-count" aria-live="polite">クリップ数: 0</p>
         </div>
       </section>
 
       <div class="controls">
         <button id="play-sequence" class="primary-button" type="button" disabled>
-          Loading YouTube Player…
+          YouTubeプレイヤーを読み込み中…
         </button>
         <button id="play-next" class="secondary-button" type="button" disabled>
-          Play Next
+          次を再生
         </button>
       </div>
     </section>
 
     <section class="clip-list-panel" aria-labelledby="clip-list-heading">
-      <h2 id="clip-list-heading">Clip list</h2>
+      <h2 id="clip-list-heading">クリップ一覧</h2>
       <ol id="clip-list" class="clip-list"></ol>
     </section>
 
     <section class="status-panel" aria-labelledby="status-heading">
-      <h2 id="status-heading">Current status</h2>
+      <h2 id="status-heading">現在の状態</h2>
       <dl class="status-grid">
-        <div><dt>Clip</dt><dd id="clip-number">Not started</dd></div>
+        <div><dt>クリップ</dt><dd id="clip-number">未開始</dd></div>
         <div><dt>videoId</dt><dd id="video-id">—</dd></div>
-        <div><dt>Range</dt><dd id="clip-range">—</dd></div>
-        <div><dt>Position</dt><dd id="current-position">—</dd></div>
-        <div><dt>Player state</dt><dd id="player-state">Loading API</dd></div>
-        <div><dt>Last transition</dt><dd id="transition-type">—</dd></div>
+        <div><dt>範囲</dt><dd id="clip-range">—</dd></div>
+        <div><dt>現在位置</dt><dd id="current-position">—</dd></div>
+        <div><dt>プレイヤー状態</dt><dd id="player-state">APIを読み込み中</dd></div>
+        <div><dt>最後の切り替え</dt><dd id="transition-type">—</dd></div>
       </dl>
     </section>
 
     <section class="sequence-panel" aria-labelledby="sequence-heading">
-      <h2 id="sequence-heading">Fixed test sequence</h2>
+      <h2 id="sequence-heading">固定テストシーケンス</h2>
       <ol id="sequence-list"></ol>
     </section>
 
     <section class="log-panel" aria-labelledby="log-heading">
       <div class="log-heading-row">
-        <h2 id="log-heading">Event log</h2>
-        <span aria-live="polite" id="log-summary">Waiting for player</span>
+        <h2 id="log-heading">イベントログ</h2>
+        <span aria-live="polite" id="log-summary">プレイヤー待機中</span>
       </div>
       <ol id="event-log" class="event-log" aria-live="polite"></ol>
     </section>
@@ -204,6 +212,7 @@ const videoLoaderForm = document.querySelector<HTMLFormElement>('#video-loader')
 const youtubeUrlInput = document.querySelector<HTMLInputElement>('#youtube-url')!
 const loadVideoButton = document.querySelector<HTMLButtonElement>('#load-video')!
 const urlMessageElement = document.querySelector<HTMLElement>('#url-message')!
+const playerFrameElement = document.querySelector<HTMLElement>('.player-frame')!
 const editorCurrentTimeElement = document.querySelector<HTMLOutputElement>('#editor-current-time')!
 const markInButton = document.querySelector<HTMLButtonElement>('#mark-in')!
 const markOutButton = document.querySelector<HTMLButtonElement>('#mark-out')!
@@ -211,7 +220,9 @@ const draftInElement = document.querySelector<HTMLOutputElement>('#draft-in')!
 const draftOutElement = document.querySelector<HTMLOutputElement>('#draft-out')!
 const inAdjustmentButtons = document.querySelectorAll<HTMLButtonElement>('[data-adjust="in"]')
 const outAdjustmentButtons = document.querySelectorAll<HTMLButtonElement>('[data-adjust="out"]')
+const editModeIndicatorElement = document.querySelector<HTMLElement>('#edit-mode-indicator')!
 const addClipButton = document.querySelector<HTMLButtonElement>('#add-clip')!
+const cancelEditButton = document.querySelector<HTMLButtonElement>('#cancel-edit')!
 const addClipMessageElement = document.querySelector<HTMLElement>('#add-clip-message')!
 const clipCountElement = document.querySelector<HTMLElement>('#clip-count')!
 const clipListElement = document.querySelector<HTMLOListElement>('#clip-list')!
@@ -241,27 +252,31 @@ let draftInSeconds: number | undefined
 let draftOutSeconds: number | undefined
 let manualVideoActive = false
 let nextClipId = 1
+let editingClipId: string | null = null
+let highlightedClipId: string | null = null
+let highlightTimeoutId: number | undefined
 
 const clips: Clip[] = []
 const videoLabels = new Map<string, string>()
 
 const UNSET_TIME = '--:--.-'
+const CLIP_HIGHLIGHT_DURATION_MS = 4000
 
 const stateNames: Record<PlayerState, string> = {
-  [-1]: 'Unstarted',
-  [0]: 'Ended',
-  [1]: 'Playing',
-  [2]: 'Paused',
-  [3]: 'Buffering',
-  [5]: 'Cued',
+  [-1]: '未開始',
+  [0]: '終了',
+  [1]: '再生中',
+  [2]: '一時停止',
+  [3]: '読み込み中',
+  [5]: '再生準備完了',
 }
 
 const errorMessages: Record<number, string> = {
-  2: 'Invalid video ID or request',
-  5: 'HTML5 player error',
-  100: 'Video not found or private',
-  101: 'Embedding is not allowed by the video owner',
-  150: 'Embedding is not allowed by the video owner',
+  2: '動画IDまたはリクエストが無効です',
+  5: 'HTML5プレイヤーでエラーが発生しました',
+  100: '動画が見つからないか、非公開です',
+  101: '動画の所有者が埋め込みを許可していません',
+  150: '動画の所有者が埋め込みを許可していません',
 }
 
 function extractYouTubeVideoId(value: string): string | undefined {
@@ -315,6 +330,93 @@ function clearAddClipValidation(): void {
   addClipMessageElement.textContent = ''
 }
 
+function renderEditMode(): void {
+  if (editingClipId === null) {
+    editModeIndicatorElement.hidden = true
+    editModeIndicatorElement.textContent = ''
+    addClipButton.textContent = 'クリップを追加'
+    cancelEditButton.hidden = true
+    playSequenceButton.disabled = !playerReady
+    return
+  }
+
+  const clipIndex = clips.findIndex((clip) => clip.id === editingClipId)
+  editModeIndicatorElement.hidden = false
+  editModeIndicatorElement.textContent =
+    clipIndex === -1 ? '編集中のクリップはありません' : `クリップ ${clipIndex + 1} を編集中`
+  addClipButton.textContent = '変更を保存'
+  cancelEditButton.hidden = false
+  playSequenceButton.disabled = true
+}
+
+function updateRenderedClipHighlight(): void {
+  const activeHighlightId = editingClipId ?? highlightedClipId
+  clipListElement.querySelectorAll<HTMLElement>('[data-clip-id]').forEach((element) => {
+    element.classList.toggle('clip-list-item-highlighted', element.dataset.clipId === activeHighlightId)
+  })
+}
+
+function clearClipHighlight(): void {
+  if (highlightTimeoutId !== undefined) window.clearTimeout(highlightTimeoutId)
+  highlightTimeoutId = undefined
+  highlightedClipId = null
+  updateRenderedClipHighlight()
+}
+
+function highlightClip(clipId: string): void {
+  if (editingClipId !== null) {
+    updateRenderedClipHighlight()
+    return
+  }
+
+  if (!clips.some((clip) => clip.id === clipId)) {
+    clearClipHighlight()
+    return
+  }
+
+  if (highlightTimeoutId !== undefined) window.clearTimeout(highlightTimeoutId)
+  highlightedClipId = clipId
+  updateRenderedClipHighlight()
+  highlightTimeoutId = window.setTimeout(() => {
+    if (highlightedClipId === clipId) clearClipHighlight()
+  }, CLIP_HIGHLIGHT_DURATION_MS)
+}
+
+function highlightEditingClip(clipId: string): void {
+  if (highlightTimeoutId !== undefined) window.clearTimeout(highlightTimeoutId)
+  highlightTimeoutId = undefined
+  highlightedClipId = clipId
+  updateRenderedClipHighlight()
+}
+
+function scrollToClip(clipId: string): void {
+  window.requestAnimationFrame(() => {
+    const clipElement = Array.from(
+      clipListElement.querySelectorAll<HTMLElement>('[data-clip-id]'),
+    ).find((element) => element.dataset.clipId === clipId)
+    if (!clipElement) return
+
+    highlightClip(clipId)
+    clipElement.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
+}
+
+function cancelClipEdit(scrollBackToClip: boolean): void {
+  const editedClipId = editingClipId
+  editingClipId = null
+  clearAddClipValidation()
+  resetDraftMarks()
+
+  if (scrollBackToClip) {
+    renderClipList()
+    if (editedClipId !== null) scrollToClip(editedClipId)
+    return
+  }
+
+  clearClipHighlight()
+  renderEditMode()
+}
+
 function readEditorPlaybackTime(): number | undefined {
   if (!player || !playerReady) return undefined
 
@@ -366,7 +468,7 @@ function getVideoLabel(videoId: string): string {
   const existingLabel = videoLabels.get(videoId)
   if (existingLabel) return existingLabel
 
-  const label = `Video ${videoLabels.size + 1}`
+  const label = `動画 ${videoLabels.size + 1}`
   videoLabels.set(videoId, label)
   return label
 }
@@ -379,23 +481,27 @@ function moveClip(index: number, offset: -1 | 1): void {
   clips.splice(index, 1)
   clips.splice(targetIndex, 0, clip)
   renderClipList()
+  highlightClip(clip.id)
 }
 
 function deleteClip(index: number): void {
-  if (!clips[index]) return
+  const clip = clips[index]
+  if (!clip) return
 
   clips.splice(index, 1)
+  if (highlightedClipId === clip.id) clearClipHighlight()
   renderClipList()
 }
 
 function renderClipList(): void {
-  clipCountElement.textContent = `${clips.length} ${clips.length === 1 ? 'clip' : 'clips'} added`
+  clipCountElement.textContent = `クリップ数: ${clips.length}`
   clipListElement.innerHTML = ''
+  renderEditMode()
 
   if (clips.length === 0) {
     const emptyItem = document.createElement('li')
     emptyItem.className = 'clip-list-empty'
-    emptyItem.textContent = 'No clips added yet.'
+    emptyItem.textContent = 'クリップはまだありません'
     clipListElement.append(emptyItem)
     return
   }
@@ -406,50 +512,162 @@ function renderClipList(): void {
     const orderNumber = index + 1
 
     item.className = 'clip-list-item'
+    item.dataset.clipId = clip.id
     item.innerHTML = `
       <div class="clip-list-item-heading">
-        <span class="clip-order" aria-label="Clip ${orderNumber}">${orderNumber}</span>
+        <span class="clip-order" aria-label="クリップ ${orderNumber}">${orderNumber}</span>
         <strong>${getVideoLabel(clip.videoId)}</strong>
       </div>
       <dl class="clip-times">
-        <div><dt>Start</dt><dd>${formatEditorTime(clip.startSeconds)}</dd></div>
-        <div><dt>End</dt><dd>${formatEditorTime(clip.endSeconds)}</dd></div>
-        <div><dt>Duration</dt><dd>${formatEditorTime(durationSeconds)}</dd></div>
+        <div><dt>開始</dt><dd>${formatEditorTime(clip.startSeconds)}</dd></div>
+        <div><dt>終了</dt><dd>${formatEditorTime(clip.endSeconds)}</dd></div>
+        <div><dt>長さ</dt><dd>${formatEditorTime(durationSeconds)}</dd></div>
       </dl>
       <div class="clip-actions">
-        <button class="clip-action-button" type="button" data-action="up" aria-label="Move clip ${orderNumber} up" ${index === 0 ? 'disabled' : ''}>↑</button>
-        <button class="clip-action-button" type="button" data-action="down" aria-label="Move clip ${orderNumber} down" ${index === clips.length - 1 ? 'disabled' : ''}>↓</button>
-        <button class="clip-action-button delete-clip-button" type="button" data-action="delete">Delete</button>
+        <button class="clip-action-button edit-clip-button" type="button" data-action="edit" aria-label="クリップ ${orderNumber} を編集">編集</button>
+        <button class="clip-action-button" type="button" data-action="up" aria-label="クリップ ${orderNumber} を上へ移動" ${index === 0 ? 'disabled' : ''}>↑</button>
+        <button class="clip-action-button" type="button" data-action="down" aria-label="クリップ ${orderNumber} を下へ移動" ${index === clips.length - 1 ? 'disabled' : ''}>↓</button>
+        <button class="clip-action-button delete-clip-button" type="button" data-action="delete">削除</button>
       </div>
     `
 
-    item.querySelector<HTMLButtonElement>('[data-action="up"]')?.addEventListener('click', () => {
+    item.addEventListener('click', () => highlightClip(clip.id))
+    item.querySelector<HTMLButtonElement>('[data-action="edit"]')?.addEventListener('click', (event) => {
+      event.stopPropagation()
+      startEditingClip(clip.id)
+    })
+    item.querySelector<HTMLButtonElement>('[data-action="up"]')?.addEventListener('click', (event) => {
+      event.stopPropagation()
       moveClip(index, -1)
     })
-    item.querySelector<HTMLButtonElement>('[data-action="down"]')?.addEventListener('click', () => {
+    item.querySelector<HTMLButtonElement>('[data-action="down"]')?.addEventListener('click', (event) => {
+      event.stopPropagation()
       moveClip(index, 1)
     })
-    item.querySelector<HTMLButtonElement>('[data-action="delete"]')?.addEventListener('click', () => {
+    item.querySelector<HTMLButtonElement>('[data-action="delete"]')?.addEventListener('click', (event) => {
+      event.stopPropagation()
       deleteClip(index)
     })
 
     clipListElement.append(item)
   })
+
+  updateRenderedClipHighlight()
 }
 
-function addDraftClip(): void {
-  if (!manualVideoActive || !editorVideoId || player?.getVideoData().video_id !== editorVideoId) {
-    addClipMessageElement.textContent = 'Load a YouTube video before adding a clip.'
+function startEditingClip(clipId: string): void {
+  const clipIndex = clips.findIndex((clip) => clip.id === clipId)
+  const clip = clips[clipIndex]
+  if (!clip) {
+    addClipMessageElement.textContent = '選択したクリップはもうありません。'
+    return
+  }
+
+  if (!player || !playerReady) {
+    addClipMessageElement.textContent = 'YouTubeプレイヤーを読み込み中です。もう一度お試しください。'
+    return
+  }
+
+  editingClipId = clip.id
+  highlightEditingClip(clip.id)
+  editorVideoId = clip.videoId
+  manualVideoActive = true
+  currentPlaybackSeconds = clip.startSeconds
+  draftInSeconds = clip.startSeconds
+  draftOutSeconds = clip.endSeconds
+  editorCurrentTimeElement.textContent = formatEditorTime(currentPlaybackSeconds)
+  draftInElement.textContent = formatEditorTime(draftInSeconds)
+  draftOutElement.textContent = formatEditorTime(draftOutSeconds)
+  markInButton.disabled = false
+  markOutButton.disabled = false
+  inAdjustmentButtons.forEach((button) => (button.disabled = false))
+  outAdjustmentButtons.forEach((button) => (button.disabled = false))
+  sequenceStarted = false
+  currentClipIndex = -1
+  boundaryHandled = false
+  activeClipHasPlayed = false
+  awaitingPlaybackAfterAutoTransition = false
+  loadGeneration += 1
+  playNextButton.disabled = true
+
+  clearAddClipValidation()
+  renderEditMode()
+  clipNumberElement.textContent = '手動読み込み動画'
+  videoIdElement.textContent = clip.videoId
+  clipRangeElement.textContent = '動画全体'
+  currentPositionElement.textContent = 'プレイヤーで操作'
+  transitionTypeElement.textContent = 'クリップ編集'
+
+  player.cueVideoById({ videoId: clip.videoId, startSeconds: clip.startSeconds })
+  addLog(`クリップ ${clipIndex + 1} を編集中です。`, 'manual')
+  window.requestAnimationFrame(() => {
+    if (editingClipId === clip.id) {
+      playerFrameElement.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  })
+}
+
+function saveDraftClip(): void {
+  if (editingClipId === null) return
+
+  const clip = clips.find((candidate) => candidate.id === editingClipId)
+  if (!clip) {
+    addClipMessageElement.textContent = '編集中のクリップはもうありません。'
+    return
+  }
+
+  if (
+    !manualVideoActive ||
+    editorVideoId !== clip.videoId ||
+    player?.getVideoData().video_id !== clip.videoId
+  ) {
+    addClipMessageElement.textContent = '読み込まれた動画が編集中のクリップと一致しません。'
     return
   }
 
   if (draftInSeconds === undefined || draftOutSeconds === undefined) {
-    addClipMessageElement.textContent = 'Set both IN and OUT times before adding a clip.'
+    addClipMessageElement.textContent = '開始と終了を設定してから保存してください。'
     return
   }
 
   if (draftOutSeconds <= draftInSeconds) {
-    addClipMessageElement.textContent = 'OUT time must be later than IN time.'
+    addClipMessageElement.textContent = '終了は開始より後に設定してください。'
+    return
+  }
+
+  clip.startSeconds = draftInSeconds
+  clip.endSeconds = draftOutSeconds
+
+  const editedClipId = clip.id
+  editingClipId = null
+  clearAddClipValidation()
+  resetDraftMarks()
+  renderClipList()
+  scrollToClip(editedClipId)
+}
+
+function submitDraftClip(): void {
+  if (editingClipId === null) {
+    addDraftClip()
+    return
+  }
+
+  saveDraftClip()
+}
+
+function addDraftClip(): void {
+  if (!manualVideoActive || !editorVideoId || player?.getVideoData().video_id !== editorVideoId) {
+    addClipMessageElement.textContent = '動画を読み込んでからクリップを追加してください。'
+    return
+  }
+
+  if (draftInSeconds === undefined || draftOutSeconds === undefined) {
+    addClipMessageElement.textContent = '開始と終了を設定してからクリップを追加してください。'
+    return
+  }
+
+  if (draftOutSeconds <= draftInSeconds) {
+    addClipMessageElement.textContent = '終了は開始より後に設定してください。'
     return
   }
 
@@ -472,15 +690,17 @@ function loadEnteredVideo(event: SubmitEvent): void {
   const videoId = extractYouTubeVideoId(youtubeUrlInput.value)
   if (!videoId) {
     youtubeUrlInput.setAttribute('aria-invalid', 'true')
-    urlMessageElement.textContent = 'Enter a YouTube watch or youtu.be URL.'
+    urlMessageElement.textContent = 'YouTubeのwatch URLまたはyoutu.be URLを入力してください。'
     youtubeUrlInput.focus()
     return
   }
 
   if (!player) {
-    urlMessageElement.textContent = 'The YouTube player is still loading. Please try again.'
+    urlMessageElement.textContent = 'YouTubeプレイヤーを読み込み中です。もう一度お試しください。'
     return
   }
+
+  if (editingClipId !== null) cancelClipEdit(false)
 
   clearUrlValidation()
   clearAddClipValidation()
@@ -499,14 +719,14 @@ function loadEnteredVideo(event: SubmitEvent): void {
   loadGeneration += 1
   playNextButton.disabled = true
 
-  clipNumberElement.textContent = 'Manual video'
+  clipNumberElement.textContent = '手動読み込み動画'
   videoIdElement.textContent = videoId
-  clipRangeElement.textContent = 'Full video'
-  currentPositionElement.textContent = 'Use player controls'
-  transitionTypeElement.textContent = 'Load Video'
+  clipRangeElement.textContent = '動画全体'
+  currentPositionElement.textContent = 'プレイヤーで操作'
+  transitionTypeElement.textContent = '動画読み込み'
 
   player.loadVideoById({ videoId, startSeconds: 0 })
-  addLog(`Loaded video ${videoId} from the URL field.`, 'manual')
+  addLog(`URL入力欄から動画 ${videoId} を読み込みました。`, 'manual')
 }
 
 function formatSeconds(value: number): string {
@@ -521,7 +741,7 @@ function renderSequence(): void {
     (clip, index) => `
       <li>
         <span class="sequence-marker">${index + 1}</span>
-        <span><strong>Video ${clip.label}</strong><code>${clip.videoId}</code></span>
+        <span><strong>動画 ${clip.label}</strong><code>${clip.videoId}</code></span>
         <span>${formatSeconds(clip.startSeconds)} → ${formatSeconds(clip.endSeconds)}</span>
       </li>
     `,
@@ -539,7 +759,8 @@ function addLog(message: string, transition?: 'automatic' | 'manual' | 'system')
   if (transition) {
     const badge = document.createElement('span')
     badge.className = `log-badge ${transition}`
-    badge.textContent = transition
+    badge.textContent =
+      transition === 'automatic' ? '自動' : transition === 'manual' ? '手動' : 'システム'
     item.append(badge)
   }
 
@@ -555,9 +776,9 @@ function addLog(message: string, transition?: 'automatic' | 'manual' | 'system')
   logSummaryElement.textContent = message
 }
 
-function updateClipStatus(transition: 'Start button' | 'Automatic' | 'Manual'): void {
+function updateClipStatus(transition: '開始ボタン' | '自動' | '手動'): void {
   const clip = TEST_CLIPS[currentClipIndex]
-  clipNumberElement.textContent = `${currentClipIndex + 1} / ${TEST_CLIPS.length} (Video ${clip.label})`
+  clipNumberElement.textContent = `${currentClipIndex + 1} / ${TEST_CLIPS.length}（動画 ${clip.label}）`
   videoIdElement.textContent = clip.videoId
   clipRangeElement.textContent = `${formatSeconds(clip.startSeconds)} → ${formatSeconds(clip.endSeconds)}`
   currentPositionElement.textContent = formatSeconds(clip.startSeconds)
@@ -568,11 +789,11 @@ function validateTestClips(): string[] {
   const problems: string[] = []
 
   if (TEST_CLIPS.some((clip) => clip.videoId.startsWith('REPLACE_WITH_'))) {
-    problems.push('Replace both placeholder video IDs in TEST_CLIPS before playback.')
+    problems.push('再生前にTEST_CLIPS内の仮動画IDを2つとも置き換えてください。')
   }
 
   if (TEST_CLIPS.some((clip) => clip.startSeconds < 0 || clip.endSeconds <= clip.startSeconds)) {
-    problems.push('Every clip must have an endSeconds value greater than startSeconds.')
+    problems.push('すべてのクリップでendSecondsをstartSecondsより大きくしてください。')
   }
 
   if (
@@ -583,7 +804,7 @@ function validateTestClips(): string[] {
     TEST_CLIPS[0].videoId !== TEST_CLIPS[2].videoId ||
     TEST_CLIPS[0].videoId === TEST_CLIPS[1].videoId
   ) {
-    problems.push('TEST_CLIPS must contain three clips in A → B → A order.')
+    problems.push('TEST_CLIPSにはA → B → Aの順で3つのクリップを設定してください。')
   }
 
   return problems
@@ -596,9 +817,9 @@ function loadClip(index: number, transition: 'start' | 'automatic' | 'manual'): 
     sequenceStarted = false
     awaitingPlaybackAfterAutoTransition = false
     playNextButton.disabled = true
-    transitionTypeElement.textContent = transition === 'manual' ? 'Manual — complete' : 'Automatic — complete'
+    transitionTypeElement.textContent = transition === 'manual' ? '手動 — 完了' : '自動 — 完了'
     addLog(
-      'Test sequence completed.',
+      'テストシーケンスが完了しました。',
       transition === 'manual' ? 'manual' : 'automatic',
     )
     return
@@ -612,7 +833,7 @@ function loadClip(index: number, transition: 'start' | 'automatic' | 'manual'): 
   const thisGeneration = loadGeneration
   const clip = TEST_CLIPS[index]
   const transitionLabel =
-    transition === 'start' ? 'Start button' : transition === 'automatic' ? 'Automatic' : 'Manual'
+    transition === 'start' ? '開始ボタン' : transition === 'automatic' ? '自動' : '手動'
 
   updateClipStatus(transitionLabel)
   playNextButton.disabled = false
@@ -622,7 +843,7 @@ function loadClip(index: number, transition: 'start' | 'automatic' | 'manual'): 
     endSeconds: clip.endSeconds,
   })
   addLog(
-    `Loaded clip ${index + 1}: Video ${clip.label}, ${formatSeconds(clip.startSeconds)}–${formatSeconds(clip.endSeconds)}.`,
+    `クリップ ${index + 1}（動画 ${clip.label}、${formatSeconds(clip.startSeconds)}–${formatSeconds(clip.endSeconds)}）を読み込みました。`,
     transition === 'start' ? 'manual' : transition,
   )
 
@@ -633,7 +854,7 @@ function loadClip(index: number, transition: 'start' | 'automatic' | 'manual'): 
         awaitingPlaybackAfterAutoTransition &&
         player?.getPlayerState() !== 1
       ) {
-        addLog('Automatic playback has not started. Tap Play Next to continue.', 'system')
+        addLog('自動再生が始まりませんでした。「次を再生」を押してください。', 'system')
       }
     }, 1800)
   }
@@ -646,7 +867,7 @@ function advanceToNext(transition: 'automatic' | 'manual'): void {
 }
 
 function handlePlayerStateChange(state: PlayerState): void {
-  playerStateElement.textContent = stateNames[state] ?? `Unknown (${state})`
+  playerStateElement.textContent = stateNames[state] ?? `不明（${state}）`
 
   if (
     state === 1 &&
@@ -659,7 +880,7 @@ function handlePlayerStateChange(state: PlayerState): void {
 
   if (state === 1 && awaitingPlaybackAfterAutoTransition) {
     awaitingPlaybackAfterAutoTransition = false
-    addLog(`Clip ${currentClipIndex + 1} began playing after an automatic transition.`, 'automatic')
+    addLog(`自動切り替え後にクリップ ${currentClipIndex + 1} の再生が始まりました。`, 'automatic')
   }
 
   if (state === 0 && sequenceStarted && activeClipHasPlayed && !boundaryHandled && player) {
@@ -668,7 +889,7 @@ function handlePlayerStateChange(state: PlayerState): void {
 
     // Ignore a late ENDED event from the previous video after the next clip has loaded.
     if (!endedVideoId || endedVideoId === activeClip.videoId) {
-      addLog(`Clip ${currentClipIndex + 1} reported ENDED; advancing.`, 'automatic')
+      addLog(`クリップ ${currentClipIndex + 1} の終了を検出し、次へ進みます。`, 'automatic')
       advanceToNext('automatic')
     }
   }
@@ -677,7 +898,7 @@ function handlePlayerStateChange(state: PlayerState): void {
 function startSequence(): void {
   const problems = validateTestClips()
   if (problems.length > 0) {
-    playerStateElement.textContent = 'Test data required'
+    playerStateElement.textContent = 'テストデータが必要です'
     problems.forEach((problem) => addLog(problem, 'system'))
     return
   }
@@ -687,7 +908,7 @@ function startSequence(): void {
   markInButton.disabled = false
   markOutButton.disabled = false
   currentClipIndex = -1
-  addLog('Play Test Sequence pressed. Starting from clip 1.', 'manual')
+  addLog('テストシーケンスをクリップ 1 から開始します。', 'manual')
   loadClip(0, 'start')
 }
 
@@ -696,14 +917,14 @@ function playNextManually(): void {
 
   if (awaitingPlaybackAfterAutoTransition && player.getPlayerState() !== 1) {
     awaitingPlaybackAfterAutoTransition = false
-    transitionTypeElement.textContent = 'Manual fallback'
-    addLog(`Play Next pressed to start clip ${currentClipIndex + 1}.`, 'manual')
+    transitionTypeElement.textContent = '手動フォールバック'
+    addLog(`「次を再生」でクリップ ${currentClipIndex + 1} を開始します。`, 'manual')
     player.playVideo()
     return
   }
 
   boundaryHandled = false
-  addLog(`Play Next pressed; advancing from clip ${currentClipIndex + 1}.`, 'manual')
+  addLog(`「次を再生」でクリップ ${currentClipIndex + 1} から次へ進みます。`, 'manual')
   advanceToNext('manual')
 }
 
@@ -721,7 +942,7 @@ function loadYouTubeApi(): Promise<YouTubeNamespace> {
     const script = document.createElement('script')
     script.src = 'https://www.youtube.com/iframe_api'
     script.async = true
-    script.onerror = () => reject(new Error('YouTube IFrame Player API failed to load.'))
+    script.onerror = () => reject(new Error('YouTube IFrame Player APIを読み込めませんでした。'))
     document.head.append(script)
   })
 }
@@ -740,20 +961,20 @@ function initializePlayer(yt: YouTubeNamespace): void {
     events: {
       onReady: () => {
         playerReady = true
-        playerStateElement.textContent = 'Ready'
+        playerStateElement.textContent = '準備完了'
         loadVideoButton.disabled = false
         addClipButton.disabled = false
         playSequenceButton.disabled = false
-        playSequenceButton.textContent = 'Play Test Sequence'
-        addLog('YouTube player is ready. Playback requires the start button.', 'system')
+        playSequenceButton.textContent = 'テストシーケンスを再生'
+        addLog('YouTubeプレイヤーの準備ができました。再生には開始ボタンを押してください。', 'system')
       },
       onStateChange: (event) => handlePlayerStateChange(event.data),
       onError: (event) => {
-        const detail = errorMessages[event.data] ?? `Unknown YouTube error (${event.data})`
+        const detail = errorMessages[event.data] ?? `不明なYouTubeエラー（${event.data}）`
         manualVideoActive = false
         awaitingPlaybackAfterAutoTransition = false
-        playerStateElement.textContent = 'Error'
-        addLog(`Player error: ${detail}.`, 'system')
+        playerStateElement.textContent = 'エラー'
+        addLog(`プレイヤーエラー: ${detail}。`, 'system')
       },
     },
   })
@@ -771,7 +992,8 @@ inAdjustmentButtons.forEach((button) => {
 outAdjustmentButtons.forEach((button) => {
   button.addEventListener('click', () => adjustDraftOut(Number(button.dataset.delta)))
 })
-addClipButton.addEventListener('click', addDraftClip)
+addClipButton.addEventListener('click', submitDraftClip)
+cancelEditButton.addEventListener('click', () => cancelClipEdit(true))
 playSequenceButton.addEventListener('click', startSequence)
 playNextButton.addEventListener('click', playNextManually)
 
@@ -792,17 +1014,18 @@ window.setInterval(() => {
 
   // endSeconds is supplied to YouTube as well; this check provides a second boundary signal.
   if (player.getPlayerState() === 1 && currentTime >= activeClip.endSeconds - 0.15) {
-    addLog(`Clip ${currentClipIndex + 1} reached its configured end; advancing.`, 'automatic')
+    addLog(`クリップ ${currentClipIndex + 1} が設定した終了位置に達したため、次へ進みます。`, 'automatic')
     advanceToNext('automatic')
   }
 }, 200)
 
 loadYouTubeApi().then(initializePlayer).catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : 'YouTube IFrame Player API failed to load.'
+  const message =
+    error instanceof Error ? error.message : 'YouTube IFrame Player APIを読み込めませんでした。'
   playerReady = false
-  playerStateElement.textContent = 'API load failed'
+  playerStateElement.textContent = 'APIの読み込みに失敗'
   loadVideoButton.disabled = true
   addClipButton.disabled = true
-  playSequenceButton.textContent = 'Player unavailable'
+  playSequenceButton.textContent = 'プレイヤーを利用できません'
   addLog(message, 'system')
 })
