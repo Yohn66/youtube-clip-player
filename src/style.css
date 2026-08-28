@@ -165,18 +165,19 @@ h2 {
 
 .editor-controls {
   display: grid;
-  gap: 12px;
-  margin-top: 16px;
-  padding: 14px;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px;
   border: 1px solid #e4e7ec;
   border-radius: 12px;
   background: #f9fafb;
 }
 
 .editor-time-row {
-  display: grid;
-  gap: 4px;
-  text-align: center;
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  justify-content: center;
 }
 
 .editor-time-row h2 {
@@ -194,27 +195,35 @@ h2 {
 }
 
 .editor-time-value {
-  font-size: clamp(1.8rem, 9vw, 2.4rem);
+  font-size: clamp(1.35rem, 7vw, 1.8rem);
   line-height: 1.1;
+}
+
+.mark-buttons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .mark-controls {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .mark-control {
   display: grid;
-  grid-template-columns: minmax(88px, 0.7fr) minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: minmax(78px, 0.7fr) minmax(0, 2fr);
+  gap: 8px;
   align-items: center;
-  padding: 12px;
-  border: 1px solid #e4e7ec;
-  border-radius: 10px;
-  background: #ffffff;
+  padding: 0;
 }
 
-.mark-control > div {
+.mark-control + .mark-control {
+  padding-top: 8px;
+  border-top: 1px solid #e4e7ec;
+}
+
+.mark-value {
   display: grid;
   gap: 2px;
 }
@@ -226,22 +235,22 @@ h2 {
 }
 
 .mark-button {
-  min-height: 48px;
-  padding: 12px 18px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 6px;
   color: #ffffff;
   background: #344054;
-  font-size: 1rem;
+  font-size: 0.9rem;
 }
 
 .mark-time {
-  font-size: 1.25rem;
+  font-size: 1rem;
 }
 
-.mark-control > .adjustment-controls {
+.adjustment-controls {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  grid-column: 1 / -1;
-  gap: 8px;
+  gap: 4px;
 }
 
 .adjustment-button {
@@ -255,7 +264,7 @@ h2 {
 
 .add-clip-controls {
   display: grid;
-  gap: 6px;
+  gap: 5px;
 }
 
 .edit-mode-indicator {
@@ -268,6 +277,13 @@ h2 {
 
 .add-clip-button {
   width: 100%;
+}
+
+.add-clip-action-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
 }
 
 .cancel-edit-button {
@@ -288,8 +304,10 @@ h2 {
 }
 
 .clip-count {
+  min-width: 3rem;
   color: #475467;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .clip-list {
@@ -407,10 +425,23 @@ h2 {
   height: 100%;
 }
 
+.test-controls {
+  margin-top: 10px;
+}
+
+.test-controls summary {
+  min-height: 44px;
+  padding: 11px 2px;
+  color: #667085;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
 .controls {
   display: grid;
   gap: 10px;
-  margin-top: 14px;
+  margin-top: 4px;
 }
 
 .primary-button {
@@ -594,6 +625,18 @@ h2 {
   background: #fec84b;
 }
 
+@media (max-width: 359px) {
+  .mark-control {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mark-value {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 8px;
+    align-items: baseline;
+  }
+}
+
 @media (min-width: 640px) {
   .test-shell {
     padding: 44px 24px 72px;
@@ -605,10 +648,6 @@ h2 {
   .sequence-panel,
   .log-panel {
     padding: 20px;
-  }
-
-  .controls {
-    grid-template-columns: 2fr 1fr;
   }
 
   .status-grid {

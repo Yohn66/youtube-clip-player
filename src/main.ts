@@ -121,15 +121,19 @@ app.innerHTML = `
       <section class="editor-controls" aria-labelledby="editor-controls-heading">
         <div class="editor-time-row">
           <h2 id="editor-controls-heading">現在位置</h2>
-          <output id="editor-current-time" class="editor-time-value">--:--.-</output>
+          <output id="editor-current-time" class="editor-time-value">--:--</output>
+        </div>
+
+        <div class="mark-buttons">
+          <button id="mark-in" class="mark-button" type="button" disabled>開始時間を設定</button>
+          <button id="mark-out" class="mark-button" type="button" disabled>終了時間を設定</button>
         </div>
 
         <div class="mark-controls">
           <div class="mark-control">
-            <button id="mark-in" class="mark-button" type="button" disabled>開始時間を設定</button>
-            <div>
+            <div class="mark-value">
               <span>開始</span>
-              <output id="draft-in" class="mark-time" aria-live="polite">--:--.-</output>
+              <output id="draft-in" class="mark-time" aria-live="polite">--:--</output>
             </div>
             <div class="adjustment-controls" role="group" aria-label="開始位置を調整">
               <button class="adjustment-button" type="button" data-adjust="in" data-delta="-5" disabled>-5</button>
@@ -139,10 +143,9 @@ app.innerHTML = `
             </div>
           </div>
           <div class="mark-control">
-            <button id="mark-out" class="mark-button" type="button" disabled>終了時間を設定</button>
-            <div>
+            <div class="mark-value">
               <span>終了</span>
-              <output id="draft-out" class="mark-time" aria-live="polite">--:--.-</output>
+              <output id="draft-out" class="mark-time" aria-live="polite">--:--</output>
             </div>
             <div class="adjustment-controls" role="group" aria-label="終了位置を調整">
               <button class="adjustment-button" type="button" data-adjust="out" data-delta="-5" disabled>-5</button>
@@ -155,25 +158,30 @@ app.innerHTML = `
 
         <div class="add-clip-controls">
           <p id="edit-mode-indicator" class="edit-mode-indicator" aria-live="polite" hidden></p>
-          <button id="add-clip" class="primary-button add-clip-button" type="button" disabled>
-            クリップを追加
-          </button>
+          <div class="add-clip-action-row">
+            <button id="add-clip" class="primary-button add-clip-button" type="button" disabled>
+              クリップを追加
+            </button>
+            <p id="clip-count" class="clip-count" aria-live="polite">0件</p>
+          </div>
           <button id="cancel-edit" class="secondary-button cancel-edit-button" type="button" hidden>
             キャンセル
           </button>
           <p id="add-clip-message" class="add-clip-message" aria-live="polite"></p>
-          <p id="clip-count" class="clip-count" aria-live="polite">クリップ数: 0</p>
         </div>
       </section>
 
-      <div class="controls">
-        <button id="play-sequence" class="primary-button" type="button" disabled>
-          YouTubeプレイヤーを読み込み中…
-        </button>
-        <button id="play-next" class="secondary-button" type="button" disabled>
-          次を再生
-        </button>
-      </div>
+      <details class="test-controls">
+        <summary>固定テスト</summary>
+        <div class="controls">
+          <button id="play-sequence" class="secondary-button" type="button" disabled>
+            YouTubeプレイヤーを読み込み中…
+          </button>
+          <button id="play-next" class="secondary-button" type="button" disabled hidden>
+            次を再生
+          </button>
+        </div>
+      </details>
     </section>
 
     <section class="clip-list-panel" aria-labelledby="clip-list-heading">
@@ -259,7 +267,7 @@ let highlightTimeoutId: number | undefined
 const clips: Clip[] = []
 const videoLabels = new Map<string, string>()
 
-const UNSET_TIME = '--:--.-'
+const UNSET_TIME = '--:--'
 const CLIP_HIGHLIGHT_DURATION_MS = 4000
 
 const stateNames: Record<PlayerState, string> = {
@@ -310,11 +318,21 @@ function clearUrlValidation(): void {
   urlMessageElement.textContent = ''
 }
 
+function toWholeSeconds(value: number): number {
+  return Math.max(0, Math.floor(value))
+}
+
 function formatEditorTime(value: number): string {
-  const minutes = Math.floor(value / 60)
-  const seconds = Math.floor(value % 60)
-  const tenths = Math.floor((value % 1) * 10)
-  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${tenths}`
+  const totalSeconds = toWholeSeconds(value)
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+  }
+
+  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
 }
 
 function resetDraftMarks(): void {
@@ -420,9 +438,10 @@ function cancelClipEdit(scrollBackToClip: boolean): void {
 function readEditorPlaybackTime(): number | undefined {
   if (!player || !playerReady) return undefined
 
-  const seconds = player.getCurrentTime()
-  if (!Number.isFinite(seconds) || seconds < 0) return undefined
+  const currentTime = player.getCurrentTime()
+  if (!Number.isFinite(currentTime) || currentTime < 0) return undefined
 
+  const seconds = toWholeSeconds(currentTime)
   currentPlaybackSeconds = seconds
   editorCurrentTimeElement.textContent = formatEditorTime(seconds)
   return seconds
@@ -494,7 +513,7 @@ function deleteClip(index: number): void {
 }
 
 function renderClipList(): void {
-  clipCountElement.textContent = `クリップ数: ${clips.length}`
+  clipCountElement.textContent = `${clips.length}件`
   clipListElement.innerHTML = ''
   renderEditMode()
 
@@ -572,9 +591,9 @@ function startEditingClip(clipId: string): void {
   highlightEditingClip(clip.id)
   editorVideoId = clip.videoId
   manualVideoActive = true
-  currentPlaybackSeconds = clip.startSeconds
-  draftInSeconds = clip.startSeconds
-  draftOutSeconds = clip.endSeconds
+  currentPlaybackSeconds = toWholeSeconds(clip.startSeconds)
+  draftInSeconds = toWholeSeconds(clip.startSeconds)
+  draftOutSeconds = toWholeSeconds(clip.endSeconds)
   editorCurrentTimeElement.textContent = formatEditorTime(currentPlaybackSeconds)
   draftInElement.textContent = formatEditorTime(draftInSeconds)
   draftOutElement.textContent = formatEditorTime(draftOutSeconds)
@@ -598,7 +617,7 @@ function startEditingClip(clipId: string): void {
   currentPositionElement.textContent = 'プレイヤーで操作'
   transitionTypeElement.textContent = 'クリップ編集'
 
-  player.cueVideoById({ videoId: clip.videoId, startSeconds: clip.startSeconds })
+  player.cueVideoById({ videoId: clip.videoId, startSeconds: draftInSeconds })
   addLog(`クリップ ${clipIndex + 1} を編集中です。`, 'manual')
   window.requestAnimationFrame(() => {
     if (editingClipId === clip.id) {
@@ -630,13 +649,16 @@ function saveDraftClip(): void {
     return
   }
 
-  if (draftOutSeconds <= draftInSeconds) {
+  const startSeconds = toWholeSeconds(draftInSeconds)
+  const endSeconds = toWholeSeconds(draftOutSeconds)
+
+  if (endSeconds <= startSeconds) {
     addClipMessageElement.textContent = '終了は開始より後に設定してください。'
     return
   }
 
-  clip.startSeconds = draftInSeconds
-  clip.endSeconds = draftOutSeconds
+  clip.startSeconds = startSeconds
+  clip.endSeconds = endSeconds
 
   const editedClipId = clip.id
   editingClipId = null
@@ -666,7 +688,10 @@ function addDraftClip(): void {
     return
   }
 
-  if (draftOutSeconds <= draftInSeconds) {
+  const startSeconds = toWholeSeconds(draftInSeconds)
+  const endSeconds = toWholeSeconds(draftOutSeconds)
+
+  if (endSeconds <= startSeconds) {
     addClipMessageElement.textContent = '終了は開始より後に設定してください。'
     return
   }
@@ -674,8 +699,8 @@ function addDraftClip(): void {
   clips.push({
     id: `clip-${nextClipId}`,
     videoId: editorVideoId,
-    startSeconds: draftInSeconds,
-    endSeconds: draftOutSeconds,
+    startSeconds,
+    endSeconds,
   })
   nextClipId += 1
 
@@ -730,10 +755,7 @@ function loadEnteredVideo(event: SubmitEvent): void {
 }
 
 function formatSeconds(value: number): string {
-  const minutes = Math.floor(value / 60)
-  const seconds = Math.floor(value % 60)
-  const tenths = Math.floor((value % 1) * 10)
-  return `${minutes}:${seconds.toString().padStart(2, '0')}.${tenths}`
+  return formatEditorTime(value)
 }
 
 function renderSequence(): void {
