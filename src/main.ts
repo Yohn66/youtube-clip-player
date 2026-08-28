@@ -49,6 +49,7 @@ type YouTubePlayer = {
     startSeconds?: number
     endSeconds?: number
   }) => void
+  seekTo: (seconds: number, allowSeekAhead: boolean) => void
   playVideo: () => void
   getCurrentTime: () => number
   getPlayerState: () => PlayerState
@@ -133,7 +134,24 @@ app.innerHTML = `
           <div class="mark-control">
             <div class="mark-value">
               <span>開始</span>
-              <output id="draft-in" class="mark-time" aria-live="polite">--:--</output>
+              <button
+                id="edit-draft-in"
+                class="mark-time-button"
+                type="button"
+                aria-label="開始時間を直接入力"
+                disabled
+              >
+                <output id="draft-in" class="mark-time" aria-live="polite">--:--</output>
+              </button>
+              <input
+                id="draft-in-input"
+                class="mark-time-input"
+                type="text"
+                inputmode="numeric"
+                autocomplete="off"
+                aria-label="開始時間"
+                hidden
+              />
             </div>
             <div class="adjustment-controls" role="group" aria-label="開始位置を調整">
               <button class="adjustment-button" type="button" data-adjust="in" data-delta="-5" disabled>-5</button>
@@ -145,7 +163,24 @@ app.innerHTML = `
           <div class="mark-control">
             <div class="mark-value">
               <span>終了</span>
-              <output id="draft-out" class="mark-time" aria-live="polite">--:--</output>
+              <button
+                id="edit-draft-out"
+                class="mark-time-button"
+                type="button"
+                aria-label="終了時間を直接入力"
+                disabled
+              >
+                <output id="draft-out" class="mark-time" aria-live="polite">--:--</output>
+              </button>
+              <input
+                id="draft-out-input"
+                class="mark-time-input"
+                type="text"
+                inputmode="numeric"
+                autocomplete="off"
+                aria-label="終了時間"
+                hidden
+              />
             </div>
             <div class="adjustment-controls" role="group" aria-label="終了位置を調整">
               <button class="adjustment-button" type="button" data-adjust="out" data-delta="-5" disabled>-5</button>
@@ -224,11 +259,16 @@ const playerFrameElement = document.querySelector<HTMLElement>('.player-frame')!
 const editorCurrentTimeElement = document.querySelector<HTMLOutputElement>('#editor-current-time')!
 const markInButton = document.querySelector<HTMLButtonElement>('#mark-in')!
 const markOutButton = document.querySelector<HTMLButtonElement>('#mark-out')!
+const editDraftInButton = document.querySelector<HTMLButtonElement>('#edit-draft-in')!
+const editDraftOutButton = document.querySelector<HTMLButtonElement>('#edit-draft-out')!
+const draftInInput = document.querySelector<HTMLInputElement>('#draft-in-input')!
+const draftOutInput = document.querySelector<HTMLInputElement>('#draft-out-input')!
 const draftInElement = document.querySelector<HTMLOutputElement>('#draft-in')!
 const draftOutElement = document.querySelector<HTMLOutputElement>('#draft-out')!
 const inAdjustmentButtons = document.querySelectorAll<HTMLButtonElement>('[data-adjust="in"]')
 const outAdjustmentButtons = document.querySelectorAll<HTMLButtonElement>('[data-adjust="out"]')
 const editModeIndicatorElement = document.querySelector<HTMLElement>('#edit-mode-indicator')!
+const addClipActionRowElement = document.querySelector<HTMLElement>('.add-clip-action-row')!
 const addClipButton = document.querySelector<HTMLButtonElement>('#add-clip')!
 const cancelEditButton = document.querySelector<HTMLButtonElement>('#cancel-edit')!
 const addClipMessageElement = document.querySelector<HTMLElement>('#add-clip-message')!
@@ -353,6 +393,8 @@ function renderEditMode(): void {
     editModeIndicatorElement.hidden = true
     editModeIndicatorElement.textContent = ''
     addClipButton.textContent = 'クリップを追加'
+    addClipActionRowElement.classList.remove('editing')
+    clipCountElement.hidden = false
     cancelEditButton.hidden = true
     playSequenceButton.disabled = !playerReady
     return
@@ -363,6 +405,8 @@ function renderEditMode(): void {
   editModeIndicatorElement.textContent =
     clipIndex === -1 ? '編集中のクリップはありません' : `クリップ ${clipIndex + 1} を編集中`
   addClipButton.textContent = '変更を保存'
+  addClipActionRowElement.classList.add('editing')
+  clipCountElement.hidden = true
   cancelEditButton.hidden = false
   playSequenceButton.disabled = true
 }
@@ -465,6 +509,114 @@ function markDraftOut(): void {
   draftOutElement.textContent = formatEditorTime(draftOutSeconds)
   outAdjustmentButtons.forEach((button) => (button.disabled = false))
   clearAddClipValidation()
+}
+
+function parseDirectTimestamp(value: string): number | undefined {
+  const normalizedValue = value.trim()
+  if (!normalizedValue) return undefined
+
+  let hours = 0
+  let minutes = 0
+  let seconds = 0
+
+  if (normalizedValue.includes(':')) {
+    const parts = normalizedValue.split(':')
+    if ((parts.length !== 2 && parts.length !== 3) || parts.some((part) => !/^\d+$/.test(part))) {
+      return undefined
+    }
+
+    if (parts.length === 2) {
+      minutes = Number(parts[0])
+      seconds = Number(parts[1])
+    } else {
+      hours = Number(parts[0])
+      minutes = Number(parts[1])
+      seconds = Number(parts[2])
+    }
+  } else {
+    if (!/^\d+$/.test(normalizedValue)) return undefined
+
+    seconds = Number(normalizedValue.slice(-2))
+    minutes = Number(normalizedValue.slice(-4, -2) || '0')
+    hours = Number(normalizedValue.slice(0, -4) || '0')
+  }
+
+  if (minutes >= 60 || seconds >= 60) return undefined
+
+  const totalSeconds = hours * 3600 + minutes * 60 + seconds
+  return Number.isSafeInteger(totalSeconds) ? totalSeconds : undefined
+}
+
+function openDirectTimestampInput(
+  draftSeconds: number | undefined,
+  button: HTMLButtonElement,
+  input: HTMLInputElement,
+): void {
+  input.value = formatEditorTime(draftSeconds ?? currentPlaybackSeconds ?? 0)
+  input.removeAttribute('aria-invalid')
+  button.hidden = true
+  input.hidden = false
+
+  window.requestAnimationFrame(() => {
+    input.focus()
+    input.select()
+  })
+}
+
+function commitDirectTimestampInput(
+  target: 'in' | 'out',
+  button: HTMLButtonElement,
+  input: HTMLInputElement,
+  returnFocus = false,
+): void {
+  if (input.hidden) return
+
+  const seconds = parseDirectTimestamp(input.value)
+  input.hidden = true
+  button.hidden = false
+
+  if (seconds === undefined) {
+    addClipMessageElement.textContent =
+      '時刻をMM:SS、H:MM:SS、または数字で入力してください（分・秒は00〜59）。'
+    if (returnFocus) button.focus()
+    return
+  }
+
+  if (target === 'in') {
+    draftInSeconds = seconds
+    draftInElement.textContent = formatEditorTime(seconds)
+    inAdjustmentButtons.forEach((adjustmentButton) => (adjustmentButton.disabled = false))
+  } else {
+    draftOutSeconds = seconds
+    draftOutElement.textContent = formatEditorTime(seconds)
+    outAdjustmentButtons.forEach((adjustmentButton) => (adjustmentButton.disabled = false))
+  }
+
+  currentPlaybackSeconds = seconds
+  editorCurrentTimeElement.textContent = formatEditorTime(seconds)
+  clearAddClipValidation()
+  if (player && playerReady) player.seekTo(seconds, true)
+  if (returnFocus) button.focus()
+}
+
+function handleDirectTimestampKeydown(
+  event: KeyboardEvent,
+  target: 'in' | 'out',
+  button: HTMLButtonElement,
+  input: HTMLInputElement,
+): void {
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    commitDirectTimestampInput(target, button, input, true)
+    return
+  }
+
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    input.hidden = true
+    button.hidden = false
+    button.focus()
+  }
 }
 
 function adjustDraftIn(deltaSeconds: number): void {
@@ -599,6 +751,8 @@ function startEditingClip(clipId: string): void {
   draftOutElement.textContent = formatEditorTime(draftOutSeconds)
   markInButton.disabled = false
   markOutButton.disabled = false
+  editDraftInButton.disabled = false
+  editDraftOutButton.disabled = false
   inAdjustmentButtons.forEach((button) => (button.disabled = false))
   outAdjustmentButtons.forEach((button) => (button.disabled = false))
   sequenceStarted = false
@@ -736,6 +890,8 @@ function loadEnteredVideo(event: SubmitEvent): void {
   editorCurrentTimeElement.textContent = formatEditorTime(currentPlaybackSeconds)
   markInButton.disabled = false
   markOutButton.disabled = false
+  editDraftInButton.disabled = false
+  editDraftOutButton.disabled = false
   sequenceStarted = false
   currentClipIndex = -1
   boundaryHandled = false
@@ -1008,6 +1164,24 @@ videoLoaderForm.addEventListener('submit', loadEnteredVideo)
 youtubeUrlInput.addEventListener('input', clearUrlValidation)
 markInButton.addEventListener('click', markDraftIn)
 markOutButton.addEventListener('click', markDraftOut)
+editDraftInButton.addEventListener('click', () =>
+  openDirectTimestampInput(draftInSeconds, editDraftInButton, draftInInput),
+)
+editDraftOutButton.addEventListener('click', () =>
+  openDirectTimestampInput(draftOutSeconds, editDraftOutButton, draftOutInput),
+)
+draftInInput.addEventListener('keydown', (event) =>
+  handleDirectTimestampKeydown(event, 'in', editDraftInButton, draftInInput),
+)
+draftOutInput.addEventListener('keydown', (event) =>
+  handleDirectTimestampKeydown(event, 'out', editDraftOutButton, draftOutInput),
+)
+draftInInput.addEventListener('blur', () =>
+  commitDirectTimestampInput('in', editDraftInButton, draftInInput),
+)
+draftOutInput.addEventListener('blur', () =>
+  commitDirectTimestampInput('out', editDraftOutButton, draftOutInput),
+)
 inAdjustmentButtons.forEach((button) => {
   button.addEventListener('click', () => adjustDraftIn(Number(button.dataset.delta)))
 })
