@@ -134,23 +134,18 @@ app.innerHTML = `
           <div class="mark-control">
             <div class="mark-value">
               <span>開始</span>
-              <button
-                id="edit-draft-in"
-                class="mark-time-button"
-                type="button"
-                aria-label="開始時間を直接入力"
-                disabled
-              >
-                <output id="draft-in" class="mark-time" aria-live="polite">--:--</output>
-              </button>
               <input
                 id="draft-in-input"
                 class="mark-time-input"
                 type="text"
                 inputmode="numeric"
+                enterkeyhint="done"
                 autocomplete="off"
+                autocapitalize="none"
+                spellcheck="false"
                 aria-label="開始時間"
-                hidden
+                value="--:--"
+                disabled
               />
             </div>
             <div class="adjustment-controls" role="group" aria-label="開始位置を調整">
@@ -163,23 +158,18 @@ app.innerHTML = `
           <div class="mark-control">
             <div class="mark-value">
               <span>終了</span>
-              <button
-                id="edit-draft-out"
-                class="mark-time-button"
-                type="button"
-                aria-label="終了時間を直接入力"
-                disabled
-              >
-                <output id="draft-out" class="mark-time" aria-live="polite">--:--</output>
-              </button>
               <input
                 id="draft-out-input"
                 class="mark-time-input"
                 type="text"
                 inputmode="numeric"
+                enterkeyhint="done"
                 autocomplete="off"
+                autocapitalize="none"
+                spellcheck="false"
                 aria-label="終了時間"
-                hidden
+                value="--:--"
+                disabled
               />
             </div>
             <div class="adjustment-controls" role="group" aria-label="終了位置を調整">
@@ -259,12 +249,8 @@ const playerFrameElement = document.querySelector<HTMLElement>('.player-frame')!
 const editorCurrentTimeElement = document.querySelector<HTMLOutputElement>('#editor-current-time')!
 const markInButton = document.querySelector<HTMLButtonElement>('#mark-in')!
 const markOutButton = document.querySelector<HTMLButtonElement>('#mark-out')!
-const editDraftInButton = document.querySelector<HTMLButtonElement>('#edit-draft-in')!
-const editDraftOutButton = document.querySelector<HTMLButtonElement>('#edit-draft-out')!
 const draftInInput = document.querySelector<HTMLInputElement>('#draft-in-input')!
 const draftOutInput = document.querySelector<HTMLInputElement>('#draft-out-input')!
-const draftInElement = document.querySelector<HTMLOutputElement>('#draft-in')!
-const draftOutElement = document.querySelector<HTMLOutputElement>('#draft-out')!
 const inAdjustmentButtons = document.querySelectorAll<HTMLButtonElement>('[data-adjust="in"]')
 const outAdjustmentButtons = document.querySelectorAll<HTMLButtonElement>('[data-adjust="out"]')
 const editModeIndicatorElement = document.querySelector<HTMLElement>('#edit-mode-indicator')!
@@ -378,8 +364,8 @@ function formatEditorTime(value: number): string {
 function resetDraftMarks(): void {
   draftInSeconds = undefined
   draftOutSeconds = undefined
-  draftInElement.textContent = UNSET_TIME
-  draftOutElement.textContent = UNSET_TIME
+  draftInInput.value = UNSET_TIME
+  draftOutInput.value = UNSET_TIME
   inAdjustmentButtons.forEach((button) => (button.disabled = true))
   outAdjustmentButtons.forEach((button) => (button.disabled = true))
 }
@@ -496,7 +482,7 @@ function markDraftIn(): void {
   if (seconds === undefined) return
 
   draftInSeconds = seconds
-  draftInElement.textContent = formatEditorTime(draftInSeconds)
+  draftInInput.value = formatEditorTime(draftInSeconds)
   inAdjustmentButtons.forEach((button) => (button.disabled = false))
   clearAddClipValidation()
 }
@@ -506,7 +492,7 @@ function markDraftOut(): void {
   if (seconds === undefined) return
 
   draftOutSeconds = seconds
-  draftOutElement.textContent = formatEditorTime(draftOutSeconds)
+  draftOutInput.value = formatEditorTime(draftOutSeconds)
   outAdjustmentButtons.forEach((button) => (button.disabled = false))
   clearAddClipValidation()
 }
@@ -547,75 +533,67 @@ function parseDirectTimestamp(value: string): number | undefined {
   return Number.isSafeInteger(totalSeconds) ? totalSeconds : undefined
 }
 
-function openDirectTimestampInput(
-  draftSeconds: number | undefined,
-  button: HTMLButtonElement,
-  input: HTMLInputElement,
-): void {
-  input.value = formatEditorTime(draftSeconds ?? currentPlaybackSeconds ?? 0)
-  input.removeAttribute('aria-invalid')
-  button.hidden = true
-  input.hidden = false
+function getDraftTimestamp(target: 'in' | 'out'): number | undefined {
+  return target === 'in' ? draftInSeconds : draftOutSeconds
+}
 
-  window.requestAnimationFrame(() => {
-    input.focus()
-    input.select()
-  })
+function restoreDirectTimestampInput(target: 'in' | 'out', input: HTMLInputElement): void {
+  const seconds = getDraftTimestamp(target)
+  input.value = seconds === undefined ? UNSET_TIME : formatEditorTime(seconds)
 }
 
 function commitDirectTimestampInput(
   target: 'in' | 'out',
-  button: HTMLButtonElement,
   input: HTMLInputElement,
-  returnFocus = false,
 ): void {
-  if (input.hidden) return
+  if (input.dataset.skipCommit === 'true') {
+    delete input.dataset.skipCommit
+    return
+  }
 
   const seconds = parseDirectTimestamp(input.value)
-  input.hidden = true
-  button.hidden = false
 
   if (seconds === undefined) {
+    restoreDirectTimestampInput(target, input)
+    input.setAttribute('aria-invalid', 'true')
     addClipMessageElement.textContent =
       '時刻をMM:SS、H:MM:SS、または数字で入力してください（分・秒は00〜59）。'
-    if (returnFocus) button.focus()
     return
   }
 
   if (target === 'in') {
     draftInSeconds = seconds
-    draftInElement.textContent = formatEditorTime(seconds)
     inAdjustmentButtons.forEach((adjustmentButton) => (adjustmentButton.disabled = false))
   } else {
     draftOutSeconds = seconds
-    draftOutElement.textContent = formatEditorTime(seconds)
     outAdjustmentButtons.forEach((adjustmentButton) => (adjustmentButton.disabled = false))
   }
 
+  input.value = formatEditorTime(seconds)
+  input.removeAttribute('aria-invalid')
   currentPlaybackSeconds = seconds
   editorCurrentTimeElement.textContent = formatEditorTime(seconds)
   clearAddClipValidation()
   if (player && playerReady) player.seekTo(seconds, true)
-  if (returnFocus) button.focus()
 }
 
 function handleDirectTimestampKeydown(
   event: KeyboardEvent,
   target: 'in' | 'out',
-  button: HTMLButtonElement,
   input: HTMLInputElement,
 ): void {
   if (event.key === 'Enter') {
     event.preventDefault()
-    commitDirectTimestampInput(target, button, input, true)
+    input.blur()
     return
   }
 
   if (event.key === 'Escape') {
     event.preventDefault()
-    input.hidden = true
-    button.hidden = false
-    button.focus()
+    restoreDirectTimestampInput(target, input)
+    input.removeAttribute('aria-invalid')
+    input.dataset.skipCommit = 'true'
+    input.blur()
   }
 }
 
@@ -623,7 +601,7 @@ function adjustDraftIn(deltaSeconds: number): void {
   if (draftInSeconds === undefined) return
 
   draftInSeconds = Math.max(0, draftInSeconds + deltaSeconds)
-  draftInElement.textContent = formatEditorTime(draftInSeconds)
+  draftInInput.value = formatEditorTime(draftInSeconds)
   clearAddClipValidation()
 }
 
@@ -631,7 +609,7 @@ function adjustDraftOut(deltaSeconds: number): void {
   if (draftOutSeconds === undefined) return
 
   draftOutSeconds = Math.max(0, draftOutSeconds + deltaSeconds)
-  draftOutElement.textContent = formatEditorTime(draftOutSeconds)
+  draftOutInput.value = formatEditorTime(draftOutSeconds)
   clearAddClipValidation()
 }
 
@@ -747,12 +725,12 @@ function startEditingClip(clipId: string): void {
   draftInSeconds = toWholeSeconds(clip.startSeconds)
   draftOutSeconds = toWholeSeconds(clip.endSeconds)
   editorCurrentTimeElement.textContent = formatEditorTime(currentPlaybackSeconds)
-  draftInElement.textContent = formatEditorTime(draftInSeconds)
-  draftOutElement.textContent = formatEditorTime(draftOutSeconds)
+  draftInInput.value = formatEditorTime(draftInSeconds)
+  draftOutInput.value = formatEditorTime(draftOutSeconds)
   markInButton.disabled = false
   markOutButton.disabled = false
-  editDraftInButton.disabled = false
-  editDraftOutButton.disabled = false
+  draftInInput.disabled = false
+  draftOutInput.disabled = false
   inAdjustmentButtons.forEach((button) => (button.disabled = false))
   outAdjustmentButtons.forEach((button) => (button.disabled = false))
   sequenceStarted = false
@@ -890,8 +868,8 @@ function loadEnteredVideo(event: SubmitEvent): void {
   editorCurrentTimeElement.textContent = formatEditorTime(currentPlaybackSeconds)
   markInButton.disabled = false
   markOutButton.disabled = false
-  editDraftInButton.disabled = false
-  editDraftOutButton.disabled = false
+  draftInInput.disabled = false
+  draftOutInput.disabled = false
   sequenceStarted = false
   currentClipIndex = -1
   boundaryHandled = false
@@ -1164,24 +1142,24 @@ videoLoaderForm.addEventListener('submit', loadEnteredVideo)
 youtubeUrlInput.addEventListener('input', clearUrlValidation)
 markInButton.addEventListener('click', markDraftIn)
 markOutButton.addEventListener('click', markDraftOut)
-editDraftInButton.addEventListener('click', () =>
-  openDirectTimestampInput(draftInSeconds, editDraftInButton, draftInInput),
-)
-editDraftOutButton.addEventListener('click', () =>
-  openDirectTimestampInput(draftOutSeconds, editDraftOutButton, draftOutInput),
-)
+draftInInput.addEventListener('focus', () => {
+  draftInInput.value = formatEditorTime(draftInSeconds ?? currentPlaybackSeconds ?? 0)
+  draftInInput.removeAttribute('aria-invalid')
+  draftInInput.select()
+})
+draftOutInput.addEventListener('focus', () => {
+  draftOutInput.value = formatEditorTime(draftOutSeconds ?? currentPlaybackSeconds ?? 0)
+  draftOutInput.removeAttribute('aria-invalid')
+  draftOutInput.select()
+})
 draftInInput.addEventListener('keydown', (event) =>
-  handleDirectTimestampKeydown(event, 'in', editDraftInButton, draftInInput),
+  handleDirectTimestampKeydown(event, 'in', draftInInput),
 )
 draftOutInput.addEventListener('keydown', (event) =>
-  handleDirectTimestampKeydown(event, 'out', editDraftOutButton, draftOutInput),
+  handleDirectTimestampKeydown(event, 'out', draftOutInput),
 )
-draftInInput.addEventListener('blur', () =>
-  commitDirectTimestampInput('in', editDraftInButton, draftInInput),
-)
-draftOutInput.addEventListener('blur', () =>
-  commitDirectTimestampInput('out', editDraftOutButton, draftOutInput),
-)
+draftInInput.addEventListener('blur', () => commitDirectTimestampInput('in', draftInInput))
+draftOutInput.addEventListener('blur', () => commitDirectTimestampInput('out', draftOutInput))
 inAdjustmentButtons.forEach((button) => {
   button.addEventListener('click', () => adjustDraftIn(Number(button.dataset.delta)))
 })
