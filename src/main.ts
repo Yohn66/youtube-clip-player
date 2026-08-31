@@ -1,14 +1,20 @@
 import './style.css'
+import {
+  PLAYLIST_NAME_MAX_LENGTH,
+  createClipId,
+  createDefaultStoredData,
+  createPlaylist,
+  createStoredData,
+  loadStoredData,
+  saveStoredData,
+  validateStoredData,
+  type Clip,
+  type Playlist,
+  type StoredDataV1,
+} from './storage'
 
 type TestClip = {
   label: 'A' | 'B'
-  videoId: string
-  startSeconds: number
-  endSeconds: number
-}
-
-type Clip = {
-  id: string
   videoId: string
   startSeconds: number
   endSeconds: number
@@ -100,6 +106,28 @@ app.innerHTML = `
     </header>
 
     <section class="player-panel" aria-label="YouTubeテストプレイヤー">
+      <section class="playlist-manager" aria-labelledby="playlist-manager-heading">
+        <h2 id="playlist-manager-heading">Playlist / Pattern</h2>
+        <label for="playlist-select">現在のPlaylist</label>
+        <select id="playlist-select" aria-describedby="storage-message"></select>
+        <div class="playlist-actions">
+          <button id="create-playlist" class="secondary-button" type="button">新規</button>
+          <button id="rename-playlist" class="secondary-button" type="button">名前変更</button>
+          <button id="delete-playlist" class="secondary-button danger-button" type="button">削除</button>
+        </div>
+        <details class="data-tools">
+          <summary>バックアップとデータ管理</summary>
+          <div class="data-actions">
+            <button id="export-backup" class="secondary-button" type="button">Backup</button>
+            <button id="restore-backup" class="secondary-button" type="button">Restore</button>
+            <button id="clear-all-data" class="secondary-button danger-button" type="button">Clear All</button>
+          </div>
+          <input id="backup-file-input" type="file" accept="application/json,.json" hidden />
+          <p class="storage-note">データはこのブラウザ内に保存されます。SafariなどのWebサイトデータを削除すると消える場合があるため、大切なデータはBackupしてください。</p>
+        </details>
+        <p id="storage-message" class="storage-message" aria-live="polite"></p>
+      </section>
+
       <form id="video-loader" class="video-loader" novalidate>
         <label for="youtube-url">YouTube URL</label>
         <input
@@ -248,6 +276,15 @@ app.innerHTML = `
   </main>
 `
 
+const playlistSelect = document.querySelector<HTMLSelectElement>('#playlist-select')!
+const createPlaylistButton = document.querySelector<HTMLButtonElement>('#create-playlist')!
+const renamePlaylistButton = document.querySelector<HTMLButtonElement>('#rename-playlist')!
+const deletePlaylistButton = document.querySelector<HTMLButtonElement>('#delete-playlist')!
+const exportBackupButton = document.querySelector<HTMLButtonElement>('#export-backup')!
+const restoreBackupButton = document.querySelector<HTMLButtonElement>('#restore-backup')!
+const clearAllDataButton = document.querySelector<HTMLButtonElement>('#clear-all-data')!
+const backupFileInput = document.querySelector<HTMLInputElement>('#backup-file-input')!
+const storageMessageElement = document.querySelector<HTMLElement>('#storage-message')!
 const videoLoaderForm = document.querySelector<HTMLFormElement>('#video-loader')!
 const youtubeUrlInput = document.querySelector<HTMLInputElement>('#youtube-url')!
 const loadVideoButton = document.querySelector<HTMLButtonElement>('#load-video')!
@@ -293,17 +330,20 @@ let currentPlaybackSeconds: number | undefined
 let draftInSeconds: number | undefined
 let draftOutSeconds: number | undefined
 let manualVideoActive = false
-let nextClipId = 1
 let editingClipId: string | null = null
 let highlightedClipId: string | null = null
 let highlightTimeoutId: number | undefined
 let activeSequence: readonly PlaybackClip[] = []
 
-const clips: Clip[] = []
+const initialStorageLoad = loadStoredData()
+let playlists = initialStorageLoad.data.playlists
+let activePlaylistId = initialStorageLoad.data.activePlaylistId
+let clips = getActivePlaylist().clips
 const videoLabels = new Map<string, string>()
 
 const UNSET_TIME = '--:--'
 const CLIP_HIGHLIGHT_DURATION_MS = 4000
+const MAX_BACKUP_FILE_SIZE_BYTES = 10 * 1024 * 1024
 
 const stateNames: Record<PlayerState, string> = {
   [-1]: '未開始',
@@ -320,6 +360,235 @@ const errorMessages: Record<number, string> = {
   100: '動画が見つからないか、非公開です',
   101: '動画の所有者が埋め込みを許可していません',
   150: '動画の所有者が埋め込みを許可していません',
+}
+
+function getActivePlaylist(): Playlist {
+  const playlist = playlists.find((candidate) => candidate.id === activePlaylistId)
+  if (!playlist) throw new Error('Active playlist is missing')
+  return playlist
+}
+
+function getStoredDataSnapshot(): StoredDataV1 {
+  return createStoredData(playlists, activePlaylistId)
+}
+
+function showStorageMessage(message: string, isError = false): void {
+  storageMessageElement.textContent = message
+  storageMessageElement.classList.toggle('storage-message-error', isError)
+}
+
+function persistData(): boolean {
+  const error = saveStoredData(getStoredDataSnapshot())
+  if (error) {
+    showStorageMessage(error, true)
+    return false
+  }
+
+  return true
+}
+
+function rebuildVideoLabels(): void {
+  videoLabels.clear()
+  playlists.forEach((playlist) => {
+    playlist.clips.forEach((clip) => getVideoLabel(clip.videoId))
+  })
+}
+
+function renderPlaylistManager(): void {
+  playlistSelect.innerHTML = ''
+  playlists.forEach((playlist) => {
+    const option = document.createElement('option')
+    option.value = playlist.id
+    option.textContent = `${playlist.name}（${playlist.clips.length}件）`
+    playlistSelect.append(option)
+  })
+  playlistSelect.value = activePlaylistId
+}
+
+function resetTransientStateForPlaylistChange(): void {
+  if (highlightTimeoutId !== undefined) window.clearTimeout(highlightTimeoutId)
+  highlightTimeoutId = undefined
+  highlightedClipId = null
+  editingClipId = null
+  clearAddClipValidation()
+  resetDraftMarks()
+  sequenceStarted = false
+  currentClipIndex = -1
+  boundaryHandled = false
+  activeClipHasPlayed = false
+  awaitingPlaybackAfterAutoTransition = false
+  activeSequence = []
+  loadGeneration += 1
+  playNextButton.disabled = true
+  clipNumberElement.textContent = '未開始'
+  clipRangeElement.textContent = '—'
+  currentPositionElement.textContent = '—'
+  transitionTypeElement.textContent = 'Playlist切り替え'
+}
+
+function applyStoredData(data: StoredDataV1): void {
+  playlists = data.playlists
+  activePlaylistId = data.activePlaylistId
+  clips = getActivePlaylist().clips
+  rebuildVideoLabels()
+  resetTransientStateForPlaylistChange()
+  renderPlaylistManager()
+  renderClipList()
+}
+
+function switchActivePlaylist(playlistId: string): void {
+  const playlist = playlists.find((candidate) => candidate.id === playlistId)
+  if (!playlist || playlist.id === activePlaylistId) return
+
+  activePlaylistId = playlist.id
+  clips = playlist.clips
+  resetTransientStateForPlaylistChange()
+  persistData()
+  renderPlaylistManager()
+  renderClipList()
+}
+
+function getNextPlaylistName(): string {
+  const names = new Set(playlists.map((playlist) => playlist.name))
+  let number = 1
+  while (names.has(`Pattern ${number}`)) number += 1
+  return `Pattern ${number}`
+}
+
+function normalizePlaylistName(value: string | null): string | undefined {
+  if (value === null) return undefined
+
+  const name = value.trim()
+  if (name.length === 0) {
+    showStorageMessage('Playlist名を入力してください。', true)
+    return undefined
+  }
+
+  if (name.length > PLAYLIST_NAME_MAX_LENGTH) {
+    showStorageMessage(`Playlist名は${PLAYLIST_NAME_MAX_LENGTH}文字以内にしてください。`, true)
+    return undefined
+  }
+
+  return name
+}
+
+function addPlaylist(): void {
+  const name = normalizePlaylistName(window.prompt('新しいPlaylist名', getNextPlaylistName()))
+  if (!name) return
+
+  const playlist = createPlaylist(name)
+  playlists.push(playlist)
+  activePlaylistId = playlist.id
+  clips = playlist.clips
+  resetTransientStateForPlaylistChange()
+  persistData()
+  renderPlaylistManager()
+  renderClipList()
+}
+
+function renameActivePlaylist(): void {
+  const playlist = getActivePlaylist()
+  const name = normalizePlaylistName(window.prompt('Playlist名を変更', playlist.name))
+  if (!name || name === playlist.name) return
+
+  playlist.name = name
+  persistData()
+  renderPlaylistManager()
+}
+
+function deleteActivePlaylist(): void {
+  const playlistIndex = playlists.findIndex((playlist) => playlist.id === activePlaylistId)
+  const playlist = playlists[playlistIndex]
+  if (!playlist) return
+
+  if (!window.confirm(`「${playlist.name}」と中のClipを削除しますか？`)) return
+
+  playlists.splice(playlistIndex, 1)
+  if (playlists.length === 0) {
+    playlists.push(createPlaylist('Pattern 1'))
+  }
+
+  const nextPlaylist = playlists[Math.min(playlistIndex, playlists.length - 1)]
+  activePlaylistId = nextPlaylist.id
+  clips = nextPlaylist.clips
+  resetTransientStateForPlaylistChange()
+  persistData()
+  renderPlaylistManager()
+  renderClipList()
+}
+
+function formatBackupDate(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function exportBackup(): void {
+  try {
+    const contents = JSON.stringify(getStoredDataSnapshot(), null, 2)
+    const blobUrl = URL.createObjectURL(new Blob([contents], { type: 'application/json' }))
+    const link = document.createElement('a')
+    link.href = blobUrl
+    link.download = `youtube-clip-player-backup-${formatBackupDate(new Date())}.json`
+    document.body.append(link)
+    link.click()
+    link.remove()
+    window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000)
+    showStorageMessage('全PlaylistのBackupを作成しました。')
+  } catch {
+    showStorageMessage('Backupファイルを作成できませんでした。', true)
+  }
+}
+
+async function restoreBackupFromFile(): Promise<void> {
+  const file = backupFileInput.files?.[0]
+  backupFileInput.value = ''
+  if (!file) return
+
+  if (file.size > MAX_BACKUP_FILE_SIZE_BYTES) {
+    showStorageMessage('Backupファイルが大きすぎます。', true)
+    return
+  }
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(await file.text())
+  } catch {
+    showStorageMessage('Backup JSONを読み込めませんでした。現在のデータは変更されていません。', true)
+    return
+  }
+
+  const validated = validateStoredData(parsed)
+  if (!validated.ok) {
+    showStorageMessage(`${validated.message} 現在のデータは変更されていません。`, true)
+    return
+  }
+
+  if (!window.confirm('現在の全PlaylistをBackupの内容で置き換えますか？')) return
+
+  const error = saveStoredData(validated.data)
+  if (error) {
+    showStorageMessage(`${error} 現在のデータは変更されていません。`, true)
+    return
+  }
+
+  applyStoredData(validated.data)
+  showStorageMessage('Backupを復元しました。')
+}
+
+function clearAllData(): void {
+  if (!window.confirm('保存されている全PlaylistとClipを削除しますか？')) return
+
+  const emptyData = createDefaultStoredData()
+  const error = saveStoredData(emptyData)
+  if (error) {
+    showStorageMessage(`${error} 現在のデータは変更されていません。`, true)
+    return
+  }
+
+  applyStoredData(emptyData)
+  showStorageMessage('全データを削除し、空のPlaylistを作成しました。')
 }
 
 function extractYouTubeVideoId(value: string): string | undefined {
@@ -640,6 +909,7 @@ function moveClip(index: number, offset: -1 | 1): void {
 
   clips.splice(index, 1)
   clips.splice(targetIndex, 0, clip)
+  persistData()
   renderClipList()
   highlightClip(clip.id)
 }
@@ -650,6 +920,8 @@ function deleteClip(index: number): void {
 
   clips.splice(index, 1)
   if (highlightedClipId === clip.id) clearClipHighlight()
+  persistData()
+  renderPlaylistManager()
   renderClipList()
 }
 
@@ -802,6 +1074,7 @@ function saveDraftClip(): void {
 
   clip.startSeconds = startSeconds
   clip.endSeconds = endSeconds
+  persistData()
 
   const editedClipId = clip.id
   editingClipId = null
@@ -840,15 +1113,16 @@ function addDraftClip(): void {
   }
 
   clips.push({
-    id: `clip-${nextClipId}`,
+    id: createClipId(),
     videoId: editorVideoId,
     startSeconds,
     endSeconds,
   })
-  nextClipId += 1
+  persistData()
 
   clearAddClipValidation()
   resetDraftMarks()
+  renderPlaylistManager()
   renderClipList()
 }
 
@@ -1175,8 +1449,23 @@ function initializePlayer(yt: YouTubeNamespace): void {
   })
 }
 
+rebuildVideoLabels()
+renderPlaylistManager()
 renderSequence()
 renderClipList()
+if (initialStorageLoad.status === 'missing') {
+  persistData()
+} else if (initialStorageLoad.message) {
+  showStorageMessage(initialStorageLoad.message, true)
+}
+playlistSelect.addEventListener('change', () => switchActivePlaylist(playlistSelect.value))
+createPlaylistButton.addEventListener('click', addPlaylist)
+renamePlaylistButton.addEventListener('click', renameActivePlaylist)
+deletePlaylistButton.addEventListener('click', deleteActivePlaylist)
+exportBackupButton.addEventListener('click', exportBackup)
+restoreBackupButton.addEventListener('click', () => backupFileInput.click())
+backupFileInput.addEventListener('change', () => void restoreBackupFromFile())
+clearAllDataButton.addEventListener('click', clearAllData)
 videoLoaderForm.addEventListener('submit', loadEnteredVideo)
 youtubeUrlInput.addEventListener('input', clearUrlValidation)
 markInButton.addEventListener('click', markDraftIn)

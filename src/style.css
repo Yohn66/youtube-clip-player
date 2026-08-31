@@ -18,7 +18,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -120,6 +121,95 @@ h2 {
   border-radius: 10px;
   background: #101828;
   aspect-ratio: 16 / 9;
+}
+
+.playlist-manager {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 12px;
+  border: 1px solid #e4e7ec;
+  border-radius: 12px;
+  background: #f9fafb;
+}
+
+.playlist-manager h2 {
+  margin-bottom: 0;
+}
+
+.playlist-manager label {
+  color: #344054;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.playlist-manager select {
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 36px 10px 12px;
+  border: 1px solid #98a2b3;
+  border-radius: 10px;
+  color: #101828;
+  background: #ffffff;
+  font-size: 16px;
+}
+
+.playlist-manager select:focus {
+  border-color: #528bff;
+  outline: 3px solid rgb(82 139 255 / 25%);
+  outline-offset: 1px;
+}
+
+.playlist-actions,
+.data-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.playlist-actions button,
+.data-actions button {
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 6px;
+  font-size: 0.82rem;
+}
+
+.danger-button {
+  color: #b42318;
+  background: #fee4e2;
+}
+
+.danger-button:hover:not(:disabled) {
+  background: #fecdca;
+}
+
+.data-tools summary {
+  min-height: 44px;
+  padding: 11px 2px;
+  color: #475467;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.storage-note {
+  margin: 10px 0 0;
+  color: #667085;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.storage-message {
+  min-height: 1.2em;
+  margin: 0;
+  color: #067647;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.storage-message-error {
+  color: #b42318;
 }
 
 .video-loader {
