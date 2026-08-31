@@ -14,6 +14,10 @@ type Clip = {
   endSeconds: number
 }
 
+type PlaybackClip = Pick<Clip, 'videoId' | 'startSeconds' | 'endSeconds'> & {
+  label: string
+}
+
 // MVP 0 test data: replace only the values in this block when test videos are chosen.
 // Keep the first and third videoId values identical so the sequence remains A -> B -> A.
 const TEST_CLIPS: readonly TestClip[] = [
@@ -188,6 +192,9 @@ app.innerHTML = `
               クリップを追加
             </button>
             <p id="clip-count" class="clip-count" aria-live="polite">0件</p>
+            <button id="play-all" class="secondary-button play-all-button" type="button" disabled>
+              ▶ 再生
+            </button>
           </div>
           <button id="cancel-edit" class="secondary-button cancel-edit-button" type="button" hidden>
             キャンセル
@@ -260,6 +267,7 @@ const cancelEditButton = document.querySelector<HTMLButtonElement>('#cancel-edit
 const addClipMessageElement = document.querySelector<HTMLElement>('#add-clip-message')!
 const clipCountElement = document.querySelector<HTMLElement>('#clip-count')!
 const clipListElement = document.querySelector<HTMLOListElement>('#clip-list')!
+const playAllButton = document.querySelector<HTMLButtonElement>('#play-all')!
 const playSequenceButton = document.querySelector<HTMLButtonElement>('#play-sequence')!
 const playNextButton = document.querySelector<HTMLButtonElement>('#play-next')!
 const clipNumberElement = document.querySelector<HTMLElement>('#clip-number')!
@@ -289,6 +297,7 @@ let nextClipId = 1
 let editingClipId: string | null = null
 let highlightedClipId: string | null = null
 let highlightTimeoutId: number | undefined
+let activeSequence: readonly PlaybackClip[] = []
 
 const clips: Clip[] = []
 const videoLabels = new Map<string, string>()
@@ -382,6 +391,7 @@ function renderEditMode(): void {
     addClipActionRowElement.classList.remove('editing')
     clipCountElement.hidden = false
     cancelEditButton.hidden = true
+    playAllButton.disabled = !playerReady || clips.length === 0
     playSequenceButton.disabled = !playerReady
     return
   }
@@ -394,6 +404,7 @@ function renderEditMode(): void {
   addClipActionRowElement.classList.add('editing')
   clipCountElement.hidden = true
   cancelEditButton.hidden = false
+  playAllButton.disabled = true
   playSequenceButton.disabled = true
 }
 
@@ -933,8 +944,8 @@ function addLog(message: string, transition?: 'automatic' | 'manual' | 'system')
 }
 
 function updateClipStatus(transition: '開始ボタン' | '自動' | '手動'): void {
-  const clip = TEST_CLIPS[currentClipIndex]
-  clipNumberElement.textContent = `${currentClipIndex + 1} / ${TEST_CLIPS.length}（動画 ${clip.label}）`
+  const clip = activeSequence[currentClipIndex]
+  clipNumberElement.textContent = `${currentClipIndex + 1} / ${activeSequence.length}（${clip.label}）`
   videoIdElement.textContent = clip.videoId
   clipRangeElement.textContent = `${formatSeconds(clip.startSeconds)} → ${formatSeconds(clip.endSeconds)}`
   currentPositionElement.textContent = formatSeconds(clip.startSeconds)
@@ -969,13 +980,13 @@ function validateTestClips(): string[] {
 function loadClip(index: number, transition: 'start' | 'automatic' | 'manual'): void {
   if (!player) return
 
-  if (index >= TEST_CLIPS.length) {
+  if (index >= activeSequence.length) {
     sequenceStarted = false
     awaitingPlaybackAfterAutoTransition = false
     playNextButton.disabled = true
     transitionTypeElement.textContent = transition === 'manual' ? '手動 — 完了' : '自動 — 完了'
     addLog(
-      'テストシーケンスが完了しました。',
+      'クリップの連続再生が完了しました。',
       transition === 'manual' ? 'manual' : 'automatic',
     )
     return
@@ -987,7 +998,7 @@ function loadClip(index: number, transition: 'start' | 'automatic' | 'manual'): 
   awaitingPlaybackAfterAutoTransition = transition === 'automatic'
   loadGeneration += 1
   const thisGeneration = loadGeneration
-  const clip = TEST_CLIPS[index]
+  const clip = activeSequence[index]
   const transitionLabel =
     transition === 'start' ? '開始ボタン' : transition === 'automatic' ? '自動' : '手動'
 
@@ -999,7 +1010,7 @@ function loadClip(index: number, transition: 'start' | 'automatic' | 'manual'): 
     endSeconds: clip.endSeconds,
   })
   addLog(
-    `クリップ ${index + 1}（動画 ${clip.label}、${formatSeconds(clip.startSeconds)}–${formatSeconds(clip.endSeconds)}）を読み込みました。`,
+    `クリップ ${index + 1}（${clip.label}、${formatSeconds(clip.startSeconds)}–${formatSeconds(clip.endSeconds)}）を読み込みました。`,
     transition === 'start' ? 'manual' : transition,
   )
 
@@ -1029,7 +1040,7 @@ function handlePlayerStateChange(state: PlayerState): void {
     state === 1 &&
     sequenceStarted &&
     player &&
-    player.getVideoData().video_id === TEST_CLIPS[currentClipIndex]?.videoId
+    player.getVideoData().video_id === activeSequence[currentClipIndex]?.videoId
   ) {
     activeClipHasPlayed = true
   }
@@ -1040,7 +1051,7 @@ function handlePlayerStateChange(state: PlayerState): void {
   }
 
   if (state === 0 && sequenceStarted && activeClipHasPlayed && !boundaryHandled && player) {
-    const activeClip = TEST_CLIPS[currentClipIndex]
+    const activeClip = activeSequence[currentClipIndex]
     const endedVideoId = player.getVideoData().video_id
 
     // Ignore a late ENDED event from the previous video after the next clip has loaded.
@@ -1051,7 +1062,33 @@ function handlePlayerStateChange(state: PlayerState): void {
   }
 }
 
-function startSequence(): void {
+function startSequence(sequence: readonly PlaybackClip[], startMessage: string): void {
+  if (!player || sequence.length === 0) return
+
+  activeSequence = sequence
+  sequenceStarted = true
+  manualVideoActive = false
+  markInButton.disabled = false
+  markOutButton.disabled = false
+  currentClipIndex = -1
+  addLog(startMessage, 'manual')
+  loadClip(0, 'start')
+}
+
+function startUserSequence(): void {
+  if (editingClipId !== null || clips.length === 0) return
+
+  const userSequence = clips.map((clip) => ({
+    videoId: clip.videoId,
+    startSeconds: clip.startSeconds,
+    endSeconds: clip.endSeconds,
+    label: getVideoLabel(clip.videoId),
+  }))
+
+  startSequence(userSequence, '現在のクリップ一覧をクリップ 1 から再生します。')
+}
+
+function startTestSequence(): void {
   const problems = validateTestClips()
   if (problems.length > 0) {
     playerStateElement.textContent = 'テストデータが必要です'
@@ -1059,13 +1096,14 @@ function startSequence(): void {
     return
   }
 
-  sequenceStarted = true
-  manualVideoActive = false
-  markInButton.disabled = false
-  markOutButton.disabled = false
-  currentClipIndex = -1
-  addLog('テストシーケンスをクリップ 1 から開始します。', 'manual')
-  loadClip(0, 'start')
+  const testSequence = TEST_CLIPS.map((clip) => ({
+    videoId: clip.videoId,
+    startSeconds: clip.startSeconds,
+    endSeconds: clip.endSeconds,
+    label: `動画 ${clip.label}`,
+  }))
+
+  startSequence(testSequence, 'テストシーケンスをクリップ 1 から開始します。')
 }
 
 function playNextManually(): void {
@@ -1120,6 +1158,7 @@ function initializePlayer(yt: YouTubeNamespace): void {
         playerStateElement.textContent = '準備完了'
         loadVideoButton.disabled = false
         addClipButton.disabled = false
+        playAllButton.disabled = clips.length === 0
         playSequenceButton.disabled = false
         playSequenceButton.textContent = 'テストシーケンスを再生'
         addLog('YouTubeプレイヤーの準備ができました。再生には開始ボタンを押してください。', 'system')
@@ -1168,7 +1207,8 @@ outAdjustmentButtons.forEach((button) => {
 })
 addClipButton.addEventListener('click', submitDraftClip)
 cancelEditButton.addEventListener('click', () => cancelClipEdit(true))
-playSequenceButton.addEventListener('click', startSequence)
+playAllButton.addEventListener('click', startUserSequence)
+playSequenceButton.addEventListener('click', startTestSequence)
 playNextButton.addEventListener('click', playNextManually)
 
 window.setInterval(() => {
@@ -1180,7 +1220,7 @@ window.setInterval(() => {
   if (!player || !sequenceStarted || currentClipIndex < 0) return
 
   const currentTime = player.getCurrentTime()
-  const activeClip = TEST_CLIPS[currentClipIndex]
+  const activeClip = activeSequence[currentClipIndex]
   currentPositionElement.textContent = formatSeconds(currentTime)
 
   // A previous video's state can briefly remain visible while the next one loads.
@@ -1200,6 +1240,7 @@ loadYouTubeApi().then(initializePlayer).catch((error: unknown) => {
   playerStateElement.textContent = 'APIの読み込みに失敗'
   loadVideoButton.disabled = true
   addClipButton.disabled = true
+  playAllButton.disabled = true
   playSequenceButton.textContent = 'プレイヤーを利用できません'
   addLog(message, 'system')
 })

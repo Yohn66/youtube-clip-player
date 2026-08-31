@@ -303,13 +303,18 @@ h2 {
 
 .add-clip-action-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 10px;
   align-items: center;
 }
 
 .add-clip-action-row.editing {
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.play-all-button {
+  min-width: 5.5rem;
+  padding: 10px 12px;
 }
 
 .cancel-edit-button {
@@ -653,6 +658,16 @@ h2 {
 }
 
 @media (max-width: 359px) {
+  .add-clip-action-row,
+  .add-clip-action-row.editing {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .play-all-button {
+    width: 100%;
+    grid-column: 1 / -1;
+  }
+
   .mark-control {
     grid-template-columns: minmax(0, 1fr);
   }
